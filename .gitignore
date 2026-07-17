@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller folders and files
+build/
+dist/
+*.spec
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE / Editor folders
+.vscode/
+.idea/
+*.swp
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# graphify outputs
+graphify-out/
