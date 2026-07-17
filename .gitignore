@@ -24,3 +24,6 @@ env/
 
 # graphify outputs
 graphify-out/
+build_exe.py
+.agents/
+.github/
