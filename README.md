@@ -1,37 +1,130 @@
-# Bam Player
+# NeonWave Player 🎵
 
-A feature-rich desktop video player built with Python, PyQt6, and the VLC media engine. 
-
-Features a modern dark glassmorphism UI, comprehensive playlist management, subtitle support, video filters, and hardware-accelerated playback.
+A stunning modern music player inspired by Winamp/Milkdrop, built with **Electron**, **Web Audio API**, and **Canvas 2D**. Dark neon aesthetics with four real-time audio visualizations.
 
 ## Features
-- **Wide Format Support**: MP4, MKV, AVI, MOV, FLV, WEBM, and more.
-- **Hardware Acceleration**: Utilizes VLC's hardware decoding where available.
-- **Modern UI**: Dark theme with translucent overlay controls that auto-hide.
-- **Playlist Management**: Drag-and-drop support, JSON playlist saving/loading.
-- **Subtitles**: Load `.srt`, `.ass`, `.vtt` with customizable font, size, and color.
-- **Video Adjustments**: Real-time Brightness, Contrast, Saturation, Hue, and Gamma.
-- **Shortcuts**: Full keyboard navigation (Space to play, F11 for fullscreen, arrows for seeking).
-- **On-Screen Display**: Animated overlays for volume, speed, and seek changes.
-- **Persistence**: Remembers window position, size, recent files, and volume.
 
-## Requirements
-- Python 3.10+
-- VLC Media Player installed on your system (for local development).
+### 🎶 Music Playback
+- Play, pause, stop, previous, next controls
+- Volume slider with mute toggle
+- Progress bar with seek functionality
+- Support for MP3, WAV, FLAC, OGG, M4A, AAC
+- Drag-and-drop file loading or file picker
+- Playlist with add, remove, reorder, shuffle, repeat
 
+### ✨ Audio Visualizations
+1. **Spectrum Analyzer** — 64-band frequency bars with smooth falling peak effect
+2. **Waveform/Oscilloscope** — Classic line waveform with grid overlay and VU meters
+3. **Circular Analyzer** — Radial frequency bars pulsing from center with rotating glow
+4. **Particle System** — 250+ particles dancing to bass/mid/treble with connection lines
 
-## Keyboard Shortcuts
-- `Space`: Play / Pause
-- `F11` or `Double-Click`: Toggle Fullscreen
-- `Right` / `Left`: Seek Forward / Backward (5s)
-- `Ctrl + Right/Left`: Seek Forward / Backward (30s)
-- `Up` / `Down`: Volume Up / Down
-- `M`: Toggle Mute
-- `[` / `]`: Decrease / Increase Playback Speed
-- `\`: Reset Speed to 1.0x
-- `,` / `.`: Frame Step Backward / Forward
-- `Ctrl+O`: Open File
-- `Ctrl+Shift+O`: Open Folder
-- `Ctrl+P`: Toggle Playlist
-- `Ctrl+S`: Take Screenshot
-- `Ctrl+T`: Toggle Always on Top
+Switch with buttons or keyboard shortcuts (1-4).
+
+### 🎨 UI/UX
+- Dark theme (#0a0a0f) with neon cyan, magenta, and lime accents
+- Frameless Electron window with custom title bar
+- Collapsible playlist sidebar
+- Fullscreen visualization mode (double-click or F11)
+- Smooth transitions and micro-animations
+
+### 🕹️ Winamp Nostalgia
+- **Classic Mode** toggle that switches to retro Winamp 2.x aesthetic
+- Keyboard shortcuts: Space (play/pause), Arrows (seek/volume), Ctrl+O (open), Ctrl+L (playlist)
+- "Falling peak" spectrum effect, VU meters, playlist with track numbers
+
+### 💾 Persistence
+- Playlist state saved between sessions
+- Remembers last played track
+- Stores preferences (volume, visualizer, theme)
+
+## Getting Started
+
+### Prerequisites
+- Node.js 18+ (LTS recommended)
+- npm or yarn
+
+### Installation
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd neonwave-player
+
+# Install dependencies
+npm install
+
+# Start the app
+npm start
+
+# Dev mode (with DevTools open)
+npm run dev
+```
+
+## Controls
+
+### Playback
+| Action | Control |
+|--------|---------|
+| Play/Pause | Space or Click play button |
+| Stop | Escape |
+| Previous | Click ◀ or P |
+| Next | Click ▶ or N |
+| Seek | Click/drag on seek bar |
+| Volume | Drag volume slider or Up/Down arrows |
+
+### Visualizers
+| Key | Visualizer |
+|-----|-----------|
+| 1 | Spectrum Analyzer |
+| 2 | Waveform |
+| 3 | Circular |
+| 4 | Particles |
+
+### Window
+| Action | Control |
+|--------|---------|
+| Fullscreen | F11 or double-click visualization |
+| Toggle Playlist | Ctrl+L |
+| Open Files | Ctrl+O |
+| Classic Mode | Click cassette icon in title bar |
+
+## Project Structure
+
+```
+/src
+  /main
+    main.js        # Electron main process
+    preload.js     # Secure IPC bridge
+  /renderer
+    index.html     # Main HTML shell
+    app.js         # Application orchestrator
+    /components
+      titlebar.js  # Custom frameless title bar
+      controls.js  # Playback controls UI
+      playlist.js  # Playlist panel
+    /visualizers
+      base.js      # Base visualizer class
+      spectrum.js  # Spectrum analyzer
+      waveform.js  # Waveform oscilloscope
+      circular.js  # Circular radial analyzer
+      particles.js # Particle system
+    /styles
+      main.css     # Dark neon theme
+      animations.css
+      winamp.css   # Classic Winamp mode
+    /utils
+      audio.js     # Web Audio API engine
+      store.js     # Data persistence
+      keybindings.js # Keyboard shortcuts
+```
+
+## Tech Stack
+
+- **Electron** — Desktop app wrapper
+- **Web Audio API** — Audio playback and real-time analysis (AnalyserNode)
+- **Canvas 2D** — All visualizations rendered at 60fps
+- **Vanilla JavaScript** — No frameworks, lightweight and performant
+
+## License
+
+MIT License

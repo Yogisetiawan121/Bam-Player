@@ -1,0 +1,173 @@
+/* ============================================================
+   NeonWave Player - Animations & Keyframes
+   ============================================================ */
+
+/* Neon Glow Pulsing */
+@keyframes neon-pulse-cyan {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(0, 240, 255, 0.3),
+                0 0 10px rgba(0, 240, 255, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.5),
+                0 0 20px rgba(0, 240, 255, 0.2),
+                0 0 40px rgba(0, 240, 255, 0.1);
+  }
+}
+
+@keyframes neon-pulse-magenta {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(255, 0, 170, 0.3),
+                0 0 10px rgba(255, 0, 170, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(255, 0, 170, 0.5),
+                0 0 20px rgba(255, 0, 170, 0.2),
+                0 0 40px rgba(255, 0, 170, 0.1);
+  }
+}
+
+/* Shimmer effect for buttons */
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* Rotating gradient for play button */
+@keyframes rotate-gradient {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Volume icon morphing */
+@keyframes volume-morph {
+  0% { transform: scaleX(1); }
+  50% { transform: scaleX(1.2); }
+  100% { transform: scaleX(1); }
+}
+
+/* Seek bar progress glow */
+@keyframes seek-glow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* Playlist item slide in */
+@keyframes playlist-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.playlist-item {
+  animation: playlist-slide-in var(--transition-normal) forwards;
+}
+
+/* Staggered animation delays for playlist items */
+.playlist-item:nth-child(1) { animation-delay: 0ms; }
+.playlist-item:nth-child(2) { animation-delay: 20ms; }
+.playlist-item:nth-child(3) { animation-delay: 40ms; }
+.playlist-item:nth-child(4) { animation-delay: 60ms; }
+.playlist-item:nth-child(5) { animation-delay: 80ms; }
+.playlist-item:nth-child(6) { animation-delay: 100ms; }
+.playlist-item:nth-child(7) { animation-delay: 120ms; }
+.playlist-item:nth-child(8) { animation-delay: 140ms; }
+.playlist-item:nth-child(9) { animation-delay: 160ms; }
+.playlist-item:nth-child(10) { animation-delay: 180ms; }
+
+/* Title bar hover glow lines */
+@keyframes line-glow {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.3; }
+}
+
+/* Toast notification */
+@keyframes toast-slide {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  85% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
+/* Waveform-like loading animation */
+@keyframes loading-wave {
+  0% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0.3);
+  }
+}
+
+/* Button press ripple effect */
+@keyframes ripple {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0.5;
+  }
+  100% {
+    width: 200%;
+    height: 200%;
+    opacity: 0;
+  }
+}
+
+/* Smooth slide for panels */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Volume slider fill gradient animation */
+@keyframes volume-fill-pulse {
+  0%, 100% {
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-lime));
+  }
+  50% {
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-lime), var(--accent-lime));
+    background-size: 200% 100%;
+  }
+}
