@@ -6,14 +6,14 @@ import webbrowser
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextBrowser, QWidget, QSizePolicy, QSpacerItem,
-    QLineEdit, QCheckBox, QSpinBox, QFormLayout, QDialogButtonBox,
+    QCheckBox, QSpinBox,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QPixmap, QIcon
 import qtawesome as qta
 
 from . import __version__, __app_name__
-from .update_checker import ReleaseInfo
+from .update_checker import ReleaseInfo, DEFAULT_REPO
 from .settings_manager import SettingsManager
 
 
@@ -233,15 +233,18 @@ class UpToDateDialog(QDialog):
 
 
 class UpdateSettingsDialog(QDialog):
-    """Settings dialog for configuring auto-update preferences."""
+    """Settings dialog for configuring auto-update preferences.
+
+    The GitHub repo is hardcoded as DEFAULT_REPO — no input needed.
+    """
 
     def __init__(self, parent, settings: SettingsManager):
         super().__init__(parent)
         self.setWindowTitle(f"Update Settings — {__app_name__}")
-        self.setFixedSize(480, 300)
+        self.setFixedSize(420, 260)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
 
-        self._repo, self._auto_check, self._interval = settings.load_update_settings()
+        _, self._auto_check, self._interval = settings.load_update_settings()
         self._setup_ui()
 
     def _setup_ui(self):
@@ -255,16 +258,9 @@ class UpdateSettingsDialog(QDialog):
                 color: #e8e8f0;
                 font-size: 13px;
             }
-            QLineEdit {
-                background-color: #12121a;
-                color: #e8e8f0;
-                border: 1px solid #1e1e2e;
-                border-radius: 6px;
-                padding: 8px 12px;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border-color: #6c5ce7;
+            QLabel#infoLabel {
+                color: #8888a0;
+                font-size: 11px;
             }
             QCheckBox {
                 color: #e8e8f0;
@@ -308,52 +304,58 @@ class UpdateSettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 20, 28, 20)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
         # Title
         title = QLabel("Update Preferences")
         title.setStyleSheet("font-size: 16px; font-weight: 700; color: #a29bfe;")
         layout.addWidget(title)
 
-        # Description
+        # Description + repo info
         desc = QLabel(
-            "Configure Bam Player to check for new releases on GitHub."
-            " When an update is found, you'll be prompted to download it."
+            "Checking for updates on:"
         )
         desc.setStyleSheet("color: #8888a0; font-size: 12px;")
-        desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        layout.addSpacing(4)
+        repo_label = QLabel(DEFAULT_REPO)
+        repo_label.setObjectName("infoLabel")
+        repo_label.setStyleSheet("color: #a29bfe; font-size: 12px; font-weight: 600;")
+        layout.addWidget(repo_label)
 
-        # Form
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addSpacing(8)
 
-        self._repo_edit = QLineEdit(self._repo)
-        self._repo_edit.setPlaceholderText("e.g. yourusername/bam-player")
-        form.addRow("GitHub Repo:", self._repo_edit)
-
+        # Auto-check toggle
         self._auto_check_cb = QCheckBox("Check for updates automatically")
         self._auto_check_cb.setChecked(self._auto_check)
-        form.addRow("", self._auto_check_cb)
+        layout.addWidget(self._auto_check_cb)
+
+        # Interval
+        interval_row = QHBoxLayout()
+        interval_row.setSpacing(8)
+        interval_label = QLabel("Check every:")
+        interval_label.setStyleSheet("color: #8888a0;")
+        interval_row.addWidget(interval_label)
 
         self._interval_spin = QSpinBox()
-        self._interval_spin.setRange(1, 168)  # 1 hour to 7 days
+        self._interval_spin.setRange(1, 168)
         self._interval_spin.setValue(self._interval)
         self._interval_spin.setSuffix(" hours")
+        self._interval_spin.setFixedWidth(120)
         self._interval_spin.setEnabled(self._auto_check)
         self._auto_check_cb.toggled.connect(self._interval_spin.setEnabled)
-        form.addRow("Check every:", self._interval_spin)
-
-        layout.addLayout(form)
+        interval_row.addWidget(self._interval_spin)
+        interval_row.addStretch()
+        layout.addLayout(interval_row)
 
         layout.addStretch()
 
         # Buttons
-        btn_box = QDialogButtonBox()
-        btn_box.setStyleSheet("""
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 color: #8888a0;
@@ -366,39 +368,29 @@ class UpdateSettingsDialog(QDialog):
                 color: #e8e8f0;
                 background-color: rgba(255,255,255,0.05);
             }
-            QPushButton[text="Save"] {
-                background-color: #6c5ce7;
-                color: white;
-                border: none;
-                font-weight: 600;
-            }
-            QPushButton[text="Save"]:hover {
-                background-color: #a29bfe;
-            }
         """)
-        save_btn = btn_box.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
-        save_btn.setObjectName("saveBtn")
-        cancel_btn = btn_box.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        btn_box.accepted.connect(self.accept)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(save_btn)
+
+        layout.addLayout(btn_layout)
 
     def get_values(self) -> tuple:
         """Return (repo, auto_check, interval_hours)."""
-        repo = self._repo_edit.text().strip()
-        # Clean up common paste mistakes
-        repo = repo.replace("https://github.com/", "").replace("github.com/", "").strip("/ ")
         return (
-            repo,
+            DEFAULT_REPO,
             self._auto_check_cb.isChecked(),
             self._interval_spin.value(),
         )
 
     def get_repo(self) -> str:
-        return self.get_values()[0]
+        return DEFAULT_REPO
 
     def is_auto_check_enabled(self) -> bool:
-        return self.get_values()[1]
+        return self._auto_check_cb.isChecked()
 
     def get_interval(self) -> int:
-        return self.get_values()[2]
+        return self._interval_spin.value()

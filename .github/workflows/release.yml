@@ -1,0 +1,214 @@
+# ─────────────────────────────────────────────────────────────
+#  Release workflow — builds Bam Player .exe on every tag
+#  Trigger: git push --tags with a v* tag (e.g. v1.1.0)
+#
+#  The built .exe and full .zip get uploaded as a GitHub
+#  Release asset, which the app's built-in update checker
+#  will automatically discover via the GitHub releases API.
+# ─────────────────────────────────────────────────────────────
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'   # e.g. v1.0.0, v1.1.0-beta, v2.0.0
+
+permissions:
+  contents: write   # needed to create a Release
+
+env:
+  APP_NAME: BamPlayer
+  VLC_CACHE_KEY: vlc-3.0.21
+  INNO_CACHE_KEY: innosetup-6.4.2
+
+jobs:
+  build:
+    name: Build ${{ env.APP_NAME }} (Windows)
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Check out the source ──────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ────────────────────────────────
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── 3. Cache VLC installation ────────────────────────
+      - name: Cache VLC (Program Files installation)
+        id: vlc_cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\VideoLAN\VLC
+          key: ${{ env.VLC_CACHE_KEY }}
+
+      - name: Install VLC (via Chocolatey)
+        if: steps.vlc_cache.outputs.cache-hit != 'true'
+        run: choco install vlc --no-progress -y
+        shell: powershell
+
+      # ── 4. Locate VLC directory ──────────────────────────
+      - name: Locate VLC installation
+        id: vlc_path
+        shell: powershell
+        run: |
+          $paths = @(
+            "${env:ProgramFiles}\VideoLAN\VLC",
+            "${env:ProgramFiles(x86)}\VideoLAN\VLC",
+            "${env:ProgramData}\chocolatey\lib\vlc\tools"     # choco portable layout
+          )
+          $vlcDir = $null
+          foreach ($p in $paths) {
+            if (Test-Path "$p\libvlc.dll") {
+              $vlcDir = $p
+              break
+            }
+          }
+          if (-not $vlcDir) {
+            # Fallback: search ProgramData
+            $candidates = Get-ChildItem "${env:ProgramData}\chocolatey\lib\vlc" -Directory -ErrorAction SilentlyContinue
+            foreach ($c in $candidates) {
+              if (Test-Path "$c\tools\libvlc.dll") {
+                $vlcDir = "$c\tools"
+                break
+              }
+            }
+          }
+          if (-not $vlcDir) { throw "VLC installation not found!" }
+          "VLC_DIR=$vlcDir" >> $env:GITHUB_OUTPUT
+          Write-Output "VLC found at: $vlcDir"
+
+      # ── 5. Stamp version from the git tag ────────────────
+      - name: Inject version into src/__init__.py
+        shell: powershell
+        run: |
+          $tag = "${{ github.ref_name }}"         # "v1.1.0"
+          $ver = $tag -replace '^v', ''            # "1.1.0"
+          $path = "src\__init__.py"
+          $content = Get-Content $path -Raw
+          $content = $content -replace '__version__\s*=\s*"[^"]*"', "__version__ = `"$ver`""
+          Set-Content $path -Value $content
+          Write-Output "Version set to $ver"
+
+      # ── 6. Build with PyInstaller ────────────────────────
+      - name: Build executable
+        shell: powershell
+        run: |
+          python -m PyInstaller `
+            -y `
+            -w `
+            --name "${{ env.APP_NAME }}" `
+            --icon "assets/icon.ico" `
+            --clean `
+            --add-data "assets/icon.ico;assets" `
+            main.py
+
+      # ── 7. Bundle VLC runtime DLLs ───────────────────────
+      - name: Bundle VLC runtime
+        shell: powershell
+        run: |
+          $vlcDir = "${{ steps.vlc_path.outputs.VLC_DIR }}"
+          $distDir = "dist\${{ env.APP_NAME }}"
+
+          Write-Output "Copying VLC runtime from $vlcDir → $distDir"
+
+          # Core DLLs
+          Copy-Item "$vlcDir\libvlc.dll"     $distDir\ -ErrorAction Stop
+          Copy-Item "$vlcDir\libvlccore.dll" $distDir\ -ErrorAction Stop
+
+          # Copy ALL plugins (safer than cherry-picking)
+          $pluginRoot = "$vlcDir\plugins"
+          if (Test-Path $pluginRoot) {
+            Copy-Item "$pluginRoot" "$distDir\" -Recurse -Force
+          }
+
+          # Strip heavy unnecessary parts to save ~50 MB
+          $stripDirs = @(
+            "$distDir\plugins\qt",
+            "$distDir\plugins\gui"
+          )
+          foreach ($d in $stripDirs) {
+            if (Test-Path $d) { Remove-Item $d -Recurse -Force }
+          }
+          # Plugin cache not needed at runtime
+          if (Test-Path "$distDir\plugins\plugins.dat") {
+            Remove-Item "$distDir\plugins\plugins.dat" -Force
+          }
+
+          # Report final size
+          $size = (Get-ChildItem $distDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Output "Bundled dist size: $('{0:N2} MB' -f ($size / 1MB))"
+
+      # ── 8. Create portable archive (.zip) ───────────────
+      - name: Create portable archive
+        shell: powershell
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          Compress-Archive -Path "dist\${{ env.APP_NAME }}\*" -DestinationPath "${{ env.APP_NAME }}-${tag}.zip" -Force
+          Write-Output "Portable archive: ${{ env.APP_NAME }}-${tag}.zip"
+
+      # ── 9. Build installer with Inno Setup ───────────────
+      - name: Cache Inno Setup
+        id: inno_cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files (x86)\Inno Setup 6
+          key: ${{ env.INNO_CACHE_KEY }}
+
+      - name: Install Inno Setup (via Chocolatey)
+        if: steps.inno_cache.outputs.cache-hit != 'true'
+        run: choco install innosetup --no-progress -y
+        shell: powershell
+
+      - name: Build installer
+        shell: powershell
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          # Stamp the version into the .iss script
+          $issPath = "installer.iss"
+          $content = Get-Content $issPath -Raw
+          $content = $content -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$tag`""
+          Set-Content $issPath -Value $content
+
+          # Find ISCC.exe
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found!" }
+
+          Write-Output "Running Inno Setup compiler..."
+          & $iscc installer.iss
+          Write-Output "Installer built."
+
+          # Verify the installer was created
+          $installer = "dist\${{ env.APP_NAME }}-${tag}-Setup.exe"
+          if (Test-Path $installer) {
+            $size = (Get-Item $installer).Length
+            Write-Output "Installer: $installer ($('{0:N2} MB' -f ($size / 1MB)))"
+          } else {
+            Write-Output "WARNING: Installer not found at $installer — check Inno Setup script"
+          }
+
+      # ── 10. Upload to GitHub Release ─────────────────────
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            dist/${{ env.APP_NAME }}/${{ env.APP_NAME }}.exe
+            dist/${{ env.APP_NAME }}-*.exe
+            ${{ env.APP_NAME }}-*.zip
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

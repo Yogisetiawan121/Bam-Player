@@ -57,12 +57,9 @@ class MainWindow(QMainWindow):
         # Discord Rich Presence (lazy-connects on first play)
         self.discord_rpc = DiscordRPC()
 
-        # Auto-update checker
+        # Auto-update checker (uses hardcoded default repo, no config needed)
         repo, _, _ = self.settings.load_update_settings()
-        self.update_checker = UpdateChecker(repo) if repo else None
-        if not repo:
-            # Use a placeholder — user can configure it
-            self.update_checker = None
+        self.update_checker = UpdateChecker(repo)
 
         # Timer to update UI state during playback
         self.update_timer = QTimer(self)
@@ -129,11 +126,11 @@ class MainWindow(QMainWindow):
         from PyQt6.QtGui import QAction
         from . import __app_name__
 
-        menubar = self.menuBar()
-        menubar.setNativeMenuBar(False)  # Ensure cross-platform consistency
+        self._menubar = self.menuBar()
+        self._menubar.setNativeMenuBar(False)  # Ensure cross-platform consistency
 
         # Help menu
-        help_menu = menubar.addMenu("&Help")
+        help_menu = self._menubar.addMenu("&Help")
 
         self._action_check_updates = QAction("🔍  Check for Updates…", self)
         self._action_check_updates.triggered.connect(self.check_for_updates_now)
@@ -524,6 +521,10 @@ class MainWindow(QMainWindow):
     def set_fullscreen(self, fullscreen: bool):
         self.is_fullscreen = fullscreen
         
+        # Hide menu bar in fullscreen (no Help section cluttering the view)
+        if hasattr(self, '_menubar'):
+            self._menubar.setVisible(not fullscreen)
+        
         # Windows 11 rounded corners fix
         import sys
         if sys.platform == "win32":
@@ -736,9 +737,7 @@ class MainWindow(QMainWindow):
 
     def _run_update_check(self, silent: bool = False):
         """Check for updates. When silent, only notify if a new version is found."""
-        if not self.update_checker:
-            if not silent:
-                self.osd.show_message("Configure a GitHub repo in Settings → Updates first")
+        if not self.update_checker.repo:
             return
 
         # Run the HTTP request in a background thread to avoid blocking the UI
@@ -784,16 +783,14 @@ class MainWindow(QMainWindow):
 
     def open_update_settings(self):
         """Open the update configuration dialog."""
+        from .update_checker import DEFAULT_REPO
         dialog = UpdateSettingsDialog(self, self.settings)
         if dialog.exec():
             repo, auto_check, interval = dialog.get_values()
             self.settings.save_update_settings(repo, auto_check, interval)
-            # Recreate the checker with the new repo
-            self.update_checker = UpdateChecker(repo) if repo else None
+            # Recreate the checker with the (possibly changed) repo
+            self.update_checker = UpdateChecker(repo or DEFAULT_REPO)
             self.osd.show_message("Update settings saved")
-            # Run check now if they just configured a repo
-            if repo:
-                QTimer.singleShot(500, self._run_update_check)
 
     # ── Shutdown ──────────────────────────────────────────────────────
     def closeEvent(self, event):

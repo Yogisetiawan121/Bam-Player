@@ -25,6 +25,10 @@ node_modules/
 # ── Graphify Output ─────────────────────────────────────────
 graphify-out/
 
+# ── Release Build Artifacts ──────────────────────────────
+BamPlayer-*.zip
+BamPlayer-*-Setup.exe
+
 # ── IDE / Editor ────────────────────────────────────────────
 .vscode/
 .idea/

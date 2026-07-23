@@ -179,8 +179,14 @@ class SettingsManager:
         self._settings.setValue('update/interval_hours', interval_hours)
 
     def load_update_settings(self) -> tuple:
-        """Return (repo, auto_check, interval_hours)."""
-        repo = self._settings.value('update/repo', '', type=str)
+        """Return (repo, auto_check, interval_hours).
+
+        Falls back to DEFAULT_REPO from update_checker so no config needed.
+        """
+        from .update_checker import DEFAULT_REPO
+        repo = self._settings.value('update/repo', DEFAULT_REPO, type=str)
+        if not repo:
+            repo = DEFAULT_REPO
         auto_check = self._settings.value('update/auto_check', True, type=bool)
         interval = self._settings.value('update/interval_hours', 24, type=int)
         return repo, auto_check, interval

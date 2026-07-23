@@ -16,6 +16,32 @@ from typing import Optional, List
 
 from . import __version__, __app_name__
 
+# Default GitHub repository — change this if you fork the project.
+DEFAULT_REPO = "Yogisetiawan121/bam-player"
+
+
+def normalize_repo(raw: str) -> str:
+    """Normalize a repo string — strip full URLs and return just owner/name.
+
+    Handles:
+      - "https://api.github.com/repos/owner/name/releases/latest"
+      - "https://github.com/owner/name"
+      - "github.com/owner/name"
+      - "owner/name"
+    """
+    raw = raw.strip("/ ")
+    # Strip common prefixes
+    for prefix in ["https://api.github.com/repos/", "http://api.github.com/repos/",
+                    "https://github.com/", "http://github.com/",
+                    "api.github.com/repos/", "github.com/"]:
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+    # Strip trailing path segments like /releases/latest
+    raw = raw.split("/releases")[0] if "/releases" in raw else raw
+    # Strip trailing /releases, /tags, etc.
+    raw = raw.rstrip("/")
+    return raw
+
 
 @dataclass
 class ReleaseInfo:
@@ -39,7 +65,7 @@ class UpdateChecker:
     """
 
     def __init__(self, repo: str = ""):
-        self.repo = repo.strip("/ ")
+        self.repo = normalize_repo(repo)
         self._latest_release: Optional[ReleaseInfo] = None
 
     def check_for_updates(self, timeout: int = 10) -> Optional[ReleaseInfo]:
@@ -90,24 +116,51 @@ class UpdateChecker:
     # ── helpers ───────────────────────────────────────────────────────
 
     def _pick_asset(self, assets: list) -> str:
-        """Return the browser_download_url of the most suitable asset for this OS."""
-        if sys.platform == "win32":
-            preferences = [".exe", ".msi", ".zip", ".7z"]
-        elif sys.platform == "darwin":
-            preferences = [".dmg", ".app.tar.gz", ".zip"]
-        else:
-            preferences = [".AppImage", ".tar.gz", ".tar.xz", ".deb", ".rpm"]
+        """Return the browser_download_url of the most suitable asset for this OS.
 
-        scored: list[tuple[int, str]] = []
-        for asset in assets:
+        Priority order (Windows):
+          1. Installer .exe (e.g. BamPlayer-1.1.0-Setup.exe)
+          2. Portable .zip
+          3. Raw .exe (requires VLC installed system-wide)
+          4. .msi / .7z
+        """
+        def score(asset) -> int:
+            """Lower score = better match."""
             name = (asset.get("name") or "").lower()
-            url = asset.get("browser_download_url") or ""
-            for i, ext in enumerate(preferences):
-                if name.endswith(ext):
-                    scored.append((i, url))
-                    break
+            if sys.platform == "win32":
+                if name.endswith("-setup.exe") or name.endswith("-installer.exe"):
+                    return 0  # installer — best for most users
+                if name.endswith(".zip"):
+                    return 10  # portable zip
+                if name.endswith(".exe"):
+                    return 20  # raw exe (needs VLC)
+                if name.endswith(".msi"):
+                    return 30
+                if name.endswith(".7z"):
+                    return 40
+            elif sys.platform == "darwin":
+                if name.endswith(".dmg"):
+                    return 0
+                if name.endswith(".app.tar.gz") or name.endswith(".app.zip"):
+                    return 10
+                if name.endswith(".zip"):
+                    return 20
+            else:
+                if name.endswith(".appimage"):
+                    return 0
+                if name.endswith(".tar.gz") or name.endswith(".tar.xz"):
+                    return 10
+                if name.endswith(".deb"):
+                    return 20
+                if name.endswith(".rpm"):
+                    return 30
+                if name.endswith(".zip"):
+                    return 40
+            return 999  # no match
+
+        scored = [(score(a), a.get("browser_download_url") or "") for a in assets]
         scored.sort(key=lambda x: x[0])
-        return scored[0][1] if scored else ""
+        return scored[0][1] if scored and scored[0][0] < 999 else ""
 
     @staticmethod
     def _is_newer(remote: str, current: str) -> bool:
