@@ -8,7 +8,7 @@ def main():
     # Setup App
     app = QApplication(sys.argv)
     app.setApplicationName("Bam Player")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.1.0")
     
     # Ensure VLC plugins are found on Windows when running from source or pyinstaller
     if sys.platform == 'win32':

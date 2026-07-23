@@ -75,7 +75,7 @@ class DiscordRPC:
         "kuroshitsuji book of murder":             "Kuroshitsuji Book of Murder",
         "kuroshitsuji movie book of the atlantic": "Kuroshitsuji Movie: Book of the Atlantic",
         "kuroshitsuji s4":                        "Kuroshitsuji Season 4",
-        "kuroshitsuji midori":                    "Kuroshitsuji Midori (The Witch Arc)",
+        "kuroshitsuji midori":                    "Kuroshitsuji Midori (Emerald Witch Arc)",
          # ── Yani Neko ──────────────────────────────────────────
         "yani neko":                                "Yani Neko",
         # ── Other shows ────────────────────────────────────────
@@ -101,7 +101,7 @@ class DiscordRPC:
         "Kuroshitsuji Book of Murder":             "kuroshitsuji_book_of_murder",
         "Kuroshitsuji Movie: Book of the Atlantic": "kuroshitsuji_book_of_atlantic",
         "Kuroshitsuji Season 4":                   "kuroshitsuji_s4",
-        "Kuroshitsuji Midori (The Witch Arc)":     "kuroshitsuji_midori",
+        "Kuroshitsuji Midori (Emerald Witch Arc)":     "kuroshitsuji_midori",
         # ── Yani Neko ──────────────────────────────────────────
         "Yani Neko":                                "yani_neko",
         # ── Other shows ────────────────────────────────────────
