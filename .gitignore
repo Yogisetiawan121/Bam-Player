@@ -1,0 +1,35 @@
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+.env
+
+# ── PyInstaller Build Output ───────────────────────────────
+*.spec
+build/
+dist/
+
+# ── Node.js ─────────────────────────────────────────────────
+node_modules/
+
+# ── Freebuff / Codebuff Agent Data ──────────────────────────
+.freebuff/
+.agents/
+
+# ── Graphify Output ─────────────────────────────────────────
+graphify-out/
+
+# ── IDE / Editor ────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

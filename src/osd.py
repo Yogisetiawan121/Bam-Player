@@ -100,6 +100,11 @@ class OSDWidget(QWidget):
 
     def _fade_out(self):
         """Start fade-out animation."""
+        # Disconnect any existing connections to prevent handler accumulation
+        try:
+            self._fade_anim.finished.disconnect(self._on_fade_out_done)
+        except TypeError:
+            pass
         self._fade_anim.setStartValue(self._opacity_effect.opacity())
         self._fade_anim.setEndValue(0.0)
         self._fade_anim.setDuration(self._fade_duration)

@@ -1,6 +1,7 @@
 """
 Custom seek bar widget with hover preview, buffered progress, and click-to-seek.
 Renders a modern translucent progress bar with time tooltip on hover.
+Shows chapter names in tooltip when hovering near chapter markers.
 """
 from PyQt6.QtWidgets import QWidget, QToolTip
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint, QSize
@@ -29,7 +30,8 @@ class SeekBar(QWidget):
         self._buffered = 0       # buffered position in ms
         self._hover_pos = -1     # hover x position (-1 = not hovering)
         self._is_dragging = False
-        self._chapters = []      # list of chapter positions in ms
+        self._chapters = []          # list of (position_ms, name) tuples
+        self._chapter_proximity_px = 8  # pixel threshold near a chapter marker
 
         # Visual dimensions
         self._bar_height = 4
@@ -45,6 +47,7 @@ class SeekBar(QWidget):
         self._handle_color = QColor(108, 92, 231)
         self._handle_hover_color = QColor(162, 155, 254)
         self._chapter_color = QColor(255, 255, 255, 120)
+        self._chapter_hover_color = QColor(255, 255, 255, 220)
         self._hover_line_color = QColor(255, 255, 255, 60)
 
     # ── Properties ────────────────────────────────────────────────────
@@ -62,7 +65,7 @@ class SeekBar(QWidget):
         self.update()
 
     def set_chapters(self, chapters: list):
-        """Set chapter markers (list of positions in ms)."""
+        """Set chapter markers (list of (position_ms, name) tuples)."""
         self._chapters = chapters
         self.update()
 
@@ -93,6 +96,23 @@ class SeekBar(QWidget):
         ratio = (x - bar.left()) / bar.width()
         ratio = max(0.0, min(1.0, ratio))
         return int(ratio * self._duration)
+
+    def _find_nearest_chapter(self, x: int):
+        """Find nearest chapter marker within proximity threshold.
+
+        Returns (position_ms, name) tuple or None.
+        """
+        if not self._chapters:
+            return None
+        best = None
+        best_dist = self._chapter_proximity_px
+        for pos_ms, name in self._chapters:
+            cx = self._pos_to_x(pos_ms)
+            dist = abs(cx - x)
+            if dist < best_dist:
+                best_dist = dist
+                best = (pos_ms, name)
+        return best
 
     # ── Paint ─────────────────────────────────────────────────────────
     def paintEvent(self, event):
@@ -125,10 +145,17 @@ class SeekBar(QWidget):
             painter.setBrush(QBrush(gradient))
             painter.drawRoundedRect(prog_rect, radius, radius)
 
-        # Chapter markers
-        for chapter_ms in self._chapters:
+        # Chapter markers — find the nearest hovered chapter once
+        hovered_near = None
+        if self._hover_pos >= 0:
+            hovered_near = self._find_nearest_chapter(self._hover_pos)
+        for chapter_ms, chapter_name in self._chapters:
             cx = self._pos_to_x(chapter_ms)
-            painter.setPen(QPen(self._chapter_color, 2))
+            is_hovered = hovered_near is not None and chapter_ms == hovered_near[0]
+            painter.setPen(QPen(
+                self._chapter_hover_color if is_hovered else self._chapter_color,
+                2
+            ))
             painter.drawLine(int(cx), bar.top() - 1, int(cx), bar.bottom() + 1)
 
         # Hover line
@@ -191,12 +218,20 @@ class SeekBar(QWidget):
             self._hover_pos = x
             self._current_bar_height = self._bar_height_hover
 
-            # Show time tooltip
             hover_ms = self._x_to_pos(x)
-            time_str = format_time(hover_ms)
+
+            # Check if near a chapter marker
+            chapter_info = self._find_nearest_chapter(x)
+            if chapter_info:
+                chapter_pos, chapter_name = chapter_info
+                time_str = format_time(chapter_pos)
+                tooltip_text = f"\U0001F4D6 {chapter_name}\n{time_str}"
+            else:
+                tooltip_text = format_time(hover_ms)
+
             QToolTip.showText(
                 self.mapToGlobal(QPoint(x, -30)),
-                time_str, self
+                tooltip_text, self
             )
             self.hover_position.emit(hover_ms)
             self.update()

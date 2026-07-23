@@ -45,7 +45,7 @@ class SettingsManager:
     def load_window_size(self) -> Optional[QSize]:
         w = self._settings.value('window/width', type=int)
         h = self._settings.value('window/height', type=int)
-        if w and h:
+        if w is not None and h is not None:
             return QSize(w, h)
         return None
 
@@ -160,6 +160,43 @@ class SettingsManager:
 
     def load_always_on_top(self) -> bool:
         return self._settings.value('ui/always_on_top', False, type=bool)
+
+    # ── Enhancement Settings ────────────────────────────────────────────
+    def save_enhancement_settings(self, enabled: bool, sharpness: float):
+        self._settings.setValue('enhancement/enabled', enabled)
+        self._settings.setValue('enhancement/sharpness', sharpness)
+
+    def load_enhancement_settings(self) -> tuple:
+        enabled = self._settings.value('enhancement/enabled', False, type=bool)
+        sharpness = self._settings.value('enhancement/sharpness', 0.0, type=float)
+        return enabled, sharpness
+
+    # ── Update Settings ─────────────────────────────────────────────
+    def save_update_settings(self, repo: str, auto_check: bool, interval_hours: int):
+        """Save auto-update preferences."""
+        self._settings.setValue('update/repo', repo)
+        self._settings.setValue('update/auto_check', auto_check)
+        self._settings.setValue('update/interval_hours', interval_hours)
+
+    def load_update_settings(self) -> tuple:
+        """Return (repo, auto_check, interval_hours)."""
+        repo = self._settings.value('update/repo', '', type=str)
+        auto_check = self._settings.value('update/auto_check', True, type=bool)
+        interval = self._settings.value('update/interval_hours', 24, type=int)
+        return repo, auto_check, interval
+
+    def save_last_update_check(self, timestamp: float):
+        self._settings.setValue('update/last_check', timestamp)
+
+    def load_last_update_check(self) -> float:
+        return self._settings.value('update/last_check', 0.0, type=float)
+
+    def save_skipped_version(self, version: str):
+        """Save a version the user chose to skip."""
+        self._settings.setValue('update/skipped_version', version)
+
+    def load_skipped_version(self) -> str:
+        return self._settings.value('update/skipped_version', '', type=str)
 
     # ── Generic ───────────────────────────────────────────────────────
     def set_value(self, key: str, value):

@@ -444,6 +444,26 @@ def get_control_bar_stylesheet() -> str:
         font-weight: 500;
         padding: 4px 8px;
     }}
+
+    QPushButton#enhanceButton {{
+        background-color: transparent;
+        border: none;
+        border-radius: 8px;
+        color: {COLORS['text_primary']};
+    }}
+
+    QPushButton#enhanceButton:hover {{
+        background-color: {COLORS['bg_hover']};
+    }}
+
+    QPushButton#enhanceButton[active="true"] {{
+        background-color: rgba(108, 92, 231, 0.25);
+        border: 1px solid {COLORS['accent_glow']};
+    }}
+
+    QPushButton#enhanceButton[active="true"]:hover {{
+        background-color: rgba(108, 92, 231, 0.35);
+    }}
     """
 
 
@@ -535,6 +555,23 @@ def get_filter_dialog_stylesheet() -> str:
         color: {COLORS['accent_light']};
         font-family: 'Consolas', monospace;
         min-width: 40px;
+    }}
+
+    QGroupBox#enhanceGroup {{
+        border: 1px solid {COLORS['accent_glow']};
+        background-color: rgba(108, 92, 231, 0.05);
+    }}
+
+    QLabel#enhanceDesc {{
+        color: {COLORS['text_secondary']};
+        font-size: 11px;
+        font-style: italic;
+        padding: 4px;
+    }}
+
+    QCheckBox {{
+        color: {COLORS['accent_light']};
+        font-weight: 600;
     }}
     """
 

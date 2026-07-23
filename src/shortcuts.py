@@ -68,6 +68,12 @@ def setup_shortcuts(window):
     # Screenshot
     QShortcut(QKeySequence("Ctrl+S"), window).activated.connect(window.take_screenshot)
     
+    # Enhancement toggle
+    QShortcut(QKeySequence("Ctrl+E"), window).activated.connect(window.toggle_enhancement)
+    
+    # Subtitle toggle
+    QShortcut(QKeySequence("Ctrl+D"), window).activated.connect(window.toggle_subtitles)
+    
     # Always on Top
     QShortcut(QKeySequence("Ctrl+T"), window).activated.connect(window.toggle_always_on_top)
     

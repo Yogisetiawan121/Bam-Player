@@ -3,9 +3,10 @@ Main application window integrating all components.
 """
 import os
 import sys
+import time
 import vlc
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QFileDialog, QMessageBox, QSplitter)
+                             QFileDialog, QMessageBox, QSplitter, QDialog)
 from PyQt6.QtCore import Qt, QTimer, QUrl, QSize
 from PyQt6.QtGui import QIcon, QDropEvent, QDragEnterEvent
 import qtawesome as qta
@@ -20,7 +21,11 @@ from .subtitle_manager import SubtitleManager, SubtitleStyleDialog
 from .video_filters import VideoFiltersDialog, apply_filters_to_player
 from .styles import get_main_stylesheet
 from .shortcuts import setup_shortcuts
-from .utils import get_pictures_folder
+from .utils import get_pictures_folder, get_video_files_from_dir
+from .discord_rpc import DiscordRPC
+from .update_checker import UpdateChecker
+from .update_dialog import (UpdateAvailableDialog, UpToDateDialog,
+                                UpdateSettingsDialog)
 
 
 class MainWindow(QMainWindow):
@@ -35,6 +40,7 @@ class MainWindow(QMainWindow):
         
         self.settings = SettingsManager()
         self.is_fullscreen = False
+        self._current_filepath = None  # Track for restart/loop operations
         
         self._setup_ui()
         self._setup_vlc()
@@ -43,6 +49,21 @@ class MainWindow(QMainWindow):
         
         self._restore_state()
         
+        # Cursor auto-hide timer (3s delay after last mouse move)
+        self._cursor_hide_timer = QTimer(self)
+        self._cursor_hide_timer.setSingleShot(True)
+        self._cursor_hide_timer.timeout.connect(self._on_cursor_hide_timeout)
+
+        # Discord Rich Presence (lazy-connects on first play)
+        self.discord_rpc = DiscordRPC()
+
+        # Auto-update checker
+        repo, _, _ = self.settings.load_update_settings()
+        self.update_checker = UpdateChecker(repo) if repo else None
+        if not repo:
+            # Use a placeholder — user can configure it
+            self.update_checker = None
+
         # Timer to update UI state during playback
         self.update_timer = QTimer(self)
         self.update_timer.setInterval(250)
@@ -99,7 +120,47 @@ class MainWindow(QMainWindow):
         self.tray = SystemTrayIntegration(icon, self)
         self.tray.show()
 
+        # ── Menu Bar (Help → Updates) ──
+        self._setup_menu_bar()
 
+    def _setup_menu_bar(self):
+        """Create the application menu bar with update-related entries."""
+        from PyQt6.QtWidgets import QMenuBar
+        from PyQt6.QtGui import QAction
+        from . import __app_name__
+
+        menubar = self.menuBar()
+        menubar.setNativeMenuBar(False)  # Ensure cross-platform consistency
+
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+
+        self._action_check_updates = QAction("🔍  Check for Updates…", self)
+        self._action_check_updates.triggered.connect(self.check_for_updates_now)
+        help_menu.addAction(self._action_check_updates)
+
+        help_menu.addSeparator()
+
+        self._action_update_settings = QAction("⚙  Update Settings…", self)
+        self._action_update_settings.triggered.connect(self.open_update_settings)
+        help_menu.addAction(self._action_update_settings)
+
+        help_menu.addSeparator()
+
+        about_action = QAction(f"ℹ  About {__app_name__}", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_action)
+
+    def _show_about_dialog(self):
+        """Show a simple about dialog."""
+        from . import __version__, __app_name__
+        QMessageBox.about(
+            self,
+            f"About {__app_name__}",
+            f"<h2>{__app_name__}</h2>"
+            f"<p>Version {__version__}</p>"
+            f"<p>A modern media player built with Python, PyQt6, and libVLC.</p>"
+        )
 
     def _on_video_container_resize(self, event):
         """Handle resizing to keep overlays positioned correctly."""
@@ -152,7 +213,9 @@ class MainWindow(QMainWindow):
         self.control_bar.fullscreen_requested.connect(self.toggle_fullscreen)
         self.control_bar.playlist_toggle_requested.connect(self.toggle_playlist)
         self.control_bar.subtitle_settings_requested.connect(self.show_subtitle_settings)
+        self.control_bar.subtitle_toggle_requested.connect(self.toggle_subtitles)
         self.control_bar.video_filters_requested.connect(self.show_video_filters)
+        self.control_bar.enhancement_toggle_requested.connect(self.toggle_enhancement)
         
         # Seek Bar
         self.control_bar.seek_bar.seek_requested.connect(self.seek_absolute)
@@ -172,7 +235,16 @@ class MainWindow(QMainWindow):
         self.tray.play_pause_requested.connect(self.toggle_playback)
         self.tray.next_requested.connect(self.play_next)
         self.tray.prev_requested.connect(self.play_prev)
+        self.tray.check_updates_requested.connect(self.check_for_updates_now)
+        self.tray.update_settings_requested.connect(self.open_update_settings)
         self.tray.quit_requested.connect(self.close)
+
+        # Control Bar — mouse enter/leave for cursor auto-hide
+        self.control_bar.mouse_entered.connect(self._pause_cursor_hide)
+        self.control_bar.mouse_left.connect(self._resume_cursor_hide)
+
+        # Schedule auto-update check on startup (delay to let window appear first)
+        QTimer.singleShot(5000, self._auto_check_updates)
 
     def _restore_state(self):
         geom = self.settings.load_window_geometry()
@@ -186,6 +258,10 @@ class MainWindow(QMainWindow):
         if self.settings.load_always_on_top():
             self.toggle_always_on_top(True)
 
+        # Restore enhancement button state
+        enhance_enabled, _ = self.settings.load_enhancement_settings()
+        self.control_bar.set_enhancement_active(enhance_enabled)
+
     # ── Playback Controls ─────────────────────────────────────────────
     def play_file(self, filepath: str):
         if not os.path.exists(filepath):
@@ -198,19 +274,27 @@ class MainWindow(QMainWindow):
         # Try loading subtitle
         self.subtitle_manager.auto_load_subtitle(self.player, filepath)
         
-        # Apply filters
-        filters = self.settings.load_filter_values()
-        apply_filters_to_player(self.player, filters)
-        
         self.player.play()
         self.update_timer.start()
+
+        # Apply filters AFTER play() so the video pipeline is initialized
+        self._apply_effective_filters()
+        
+        # Clear previous chapter markers and schedule extraction for new media
+        self.control_bar.seek_bar.set_chapters([])
+        QTimer.singleShot(800, self._extract_chapter_markers)
         
         title = os.path.basename(filepath)
         self.control_bar.set_title(title)
         self.setWindowTitle(f"Bam Player - {title}")
         
+        self._current_filepath = filepath
         self.settings.save_last_file(filepath)
         self.settings.add_recent_file(filepath)
+
+        # Update Discord Rich Presence (position is 0 — starts from beginning)
+        duration = self.player.get_length()
+        self.discord_rpc.set_playing(title, duration, position_ms=0)
         
     def toggle_playback(self):
         if self.player.get_state() == vlc.State.Playing:
@@ -232,7 +316,9 @@ class MainWindow(QMainWindow):
         self.control_bar.set_playing_state(False)
         self.control_bar.update_time(0, 0)
         self.control_bar.seek_bar.set_buffered(0)
+        self.control_bar.seek_bar.set_chapters([])
         self.osd.show_state('stop')
+        self.discord_rpc.clear_presence()
 
     def play_next(self):
         next_file = self.playlist_panel.get_next_item()
@@ -251,6 +337,7 @@ class MainWindow(QMainWindow):
     def seek_absolute(self, position_ms: int):
         self.player.set_time(position_ms)
         self.osd.show_seek(self.control_bar.time_label.text().split(' / ')[0])
+        self._sync_discord_timer()
 
     def seek_relative(self, delta_ms: int):
         current = self.player.get_time()
@@ -261,6 +348,7 @@ class MainWindow(QMainWindow):
             # Update UI immediately for responsiveness
             self.control_bar.seek_bar.set_position(int(new_pos))
             self.osd.show_seek(self.control_bar.time_label.text().split(' / ')[0])
+            self._sync_discord_timer()
 
     def set_volume(self, volume: int):
         self.player.audio_set_volume(volume)
@@ -275,27 +363,147 @@ class MainWindow(QMainWindow):
         self.settings.save_speed(speed)
         self.osd.show_speed(speed)
 
+    def _extract_chapter_markers(self):
+        """Extract chapter positions + names from the current media and populate seek bar.
+
+        Uses a seek-and-record approach since libvlc doesn't expose chapter start times directly.
+        Chapter names are sourced from libvlc media chapter descriptions if available.
+        Pauses playback during scanning to avoid visual glitches, then restores state.
+        """
+        seek_bar = self.control_bar.seek_bar
+
+        try:
+            chapter_count = self.player.video_get_chapter_count()
+        except Exception:
+            chapter_count = 0
+
+        # video_get_chapter_count returns -1 on error, 0 for no chapters, 1 for single default
+        if chapter_count <= 1:
+            seek_bar.set_chapters([])
+            return
+
+        # Save current state to restore after scanning
+        saved_pos = self.player.get_time()
+        saved_state = self.player.get_state()
+        saved_chapter = max(self.player.video_get_chapter(), 0)
+        was_playing = saved_state == vlc.State.Playing
+
+        # Try to get chapter descriptions from the media (e.g. "Opening Credits", "Chapter 3")
+        chapter_names = {}
+        media = self.player.get_media()
+        if media:
+            try:
+                media.parse()  # Ensure media metadata is fully parsed
+                # python-vlc exposes libvlc_media_get_chapter_description as:
+                #   media.get_chapter_description(title_index, chapter_index)
+                # where -1 means "current title"
+                for i in range(chapter_count):
+                    try:
+                        desc = media.get_chapter_description(-1, i)
+                        if desc:
+                            chapter_names[i] = desc.strip()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # Pause during scanning to avoid visible seek artifacts
+        if was_playing:
+            self.player.set_pause(True)
+
+        chapters = []
+        try:
+            # Skip chapter 0 (start of video at position 0)
+            for i in range(1, chapter_count):
+                self.player.video_set_chapter(i)
+                pos = self.player.get_time()
+                if pos > 10:  # Filter out spurious zero positions
+                    name = chapter_names.get(i, f"Chapter {i}")
+                    chapters.append((pos, name))
+        except Exception:
+            chapters = []
+
+        # Restore playback state
+        try:
+            self.player.video_set_chapter(saved_chapter)
+            if saved_pos > 0:
+                self.player.set_time(saved_pos)
+            if was_playing:
+                self.player.play()
+        except Exception:
+            pass
+
+        seek_bar.set_chapters(sorted(chapters))
+
     # ── VLC Event Callbacks ───────────────────────────────────────────
     @vlc.callbackmethod
     def _on_media_end(self, event):
         # Handle looping/next based on mode
         loop_mode = self.settings.load_loop_mode()
         if loop_mode == 'single':
-            # Restart current
-            pass # Requires re-setting media in some VLC versions, or setting position to 0
+            # Defer restart to main thread (VLC callbacks should not make libvlc calls)
+            QTimer.singleShot(100, self._restart_current_media)
         else:
             # Schedule next track safely using QTimer (VLC callbacks shouldn't block/call GUI)
             QTimer.singleShot(100, self.play_next)
+
+    def _restart_current_media(self):
+        """Re-set the current media to restart playback (more reliable than set_time(0)).
+
+        Re-loads subtitles and re-schedules chapter extraction since set_media()
+        re-initializes the subtitle state internally.
+        """
+        current_media = self.player.get_media()
+        if current_media:
+            self.player.set_media(current_media)
+            # Re-load subtitles (set_media re-initializes subtitle state)
+            if self._current_filepath:
+                self.subtitle_manager.auto_load_subtitle(self.player, self._current_filepath)
+            # Clear and re-extract chapter markers
+            self.control_bar.seek_bar.set_chapters([])
+            QTimer.singleShot(800, self._extract_chapter_markers)
+            self.player.play()
+
+    def _reapply_filters(self):
+        """Re-apply effective filters after pipeline is fully initialized."""
+        self._apply_effective_filters()
 
     @vlc.callbackmethod
     def _on_playing(self, event):
         self.control_bar.set_playing_state(True)
         self.tray.update_play_state(True)
+        # Re-apply filters once the video pipeline is fully initialized
+        QTimer.singleShot(0, self._reapply_filters)
+        # Update Discord presence on main thread (VLC callbacks run on libvlc thread)
+        # Two-phase: first set_playing in play_file() may lack duration (media not parsed),
+        # so this correction fires once VLC has the real length.
+        if self._current_filepath:
+            title = os.path.basename(self._current_filepath)
+            duration = self.player.get_length()
+            position = max(0, self.player.get_time())
+            QTimer.singleShot(0, lambda t=title, d=duration, p=position: self.discord_rpc.set_playing(t, d, p))
 
     @vlc.callbackmethod
     def _on_paused(self, event):
         self.control_bar.set_playing_state(False)
         self.tray.update_play_state(False)
+        # Update Discord on main thread to show paused state
+        if self._current_filepath:
+            title = os.path.basename(self._current_filepath)
+            QTimer.singleShot(0, lambda t=title: self.discord_rpc.set_paused(t))
+
+    def _sync_discord_timer(self):
+        """Refresh the Discord Rich Presence timer to match current VLC position.
+
+        Call this after seeking or any operation that changes playback position
+        without triggering a new MediaPlayerPlaying event.
+        """
+        if not self._current_filepath or self.player.get_state() != vlc.State.Playing:
+            return
+        title = os.path.basename(self._current_filepath)
+        duration = self.player.get_length()
+        position = max(0, self.player.get_time())
+        self.discord_rpc.set_playing(title, duration, position)
 
     def _update_ui_state(self):
         """Called periodically to update seek bar and time."""
@@ -365,15 +573,66 @@ class MainWindow(QMainWindow):
         self.subtitle_manager.prefs = prefs
         self.osd.show_message("Subtitle styles saved")
 
+    def toggle_subtitles(self):
+        """Real-time toggle of subtitle visibility (on/off)."""
+        active = self.subtitle_manager.toggle_subtitles(self.player)
+        self.control_bar.set_subtitle_active(active)
+        if active:
+            self.osd.show_message("Subtitles: ON")
+        else:
+            self.osd.show_message("Subtitles: OFF")
+
     def show_video_filters(self):
         current = self.settings.load_filter_values()
-        dialog = VideoFiltersDialog(self, current)
+        enhance_enabled, enhance_sharpness = self.settings.load_enhancement_settings()
+        dialog = VideoFiltersDialog(self, current, enhance_enabled, enhance_sharpness)
         dialog.filters_changed.connect(self._on_filters_changed)
+        dialog.enhancement_changed.connect(self._on_enhancement_changed)
         dialog.exec()
         
     def _on_filters_changed(self, filters: dict):
         self.settings.save_filter_values(filters)
-        apply_filters_to_player(self.player, filters)
+        self._apply_effective_filters()
+
+    def _on_enhancement_changed(self, enabled: bool, sharpness: float):
+        self.settings.save_enhancement_settings(enabled, sharpness)
+        self.control_bar.set_enhancement_active(enabled)
+        self._apply_effective_filters()
+
+    def toggle_enhancement(self):
+        """Quick-toggle enhancement on/off from control bar button."""
+        enabled, sharpness = self.settings.load_enhancement_settings()
+        new_enabled = not enabled
+        if new_enabled and sharpness <= 0:
+            # Default to 50% sharpness if turning on from zero
+            sharpness = 50.0
+        self.settings.save_enhancement_settings(new_enabled, sharpness)
+        self.control_bar.set_enhancement_active(new_enabled)
+        self._apply_effective_filters()
+        if new_enabled:
+            self.osd.show_message("Enhancement: ON")
+        else:
+            self.osd.show_message("Enhancement: OFF")
+
+    def _apply_effective_filters(self):
+        """Combine raw filter values with enhancement settings and apply to VLC."""
+        filters = self.settings.load_filter_values()
+        enhance_enabled, sharpness = self.settings.load_enhancement_settings()
+
+        if enhance_enabled and sharpness > 0:
+            # Apply enhancement on top of user's manual adjustments
+            sharp_factor = sharpness / 100.0
+            enhanced = filters.copy()
+            enhanced['contrast'] = filters['contrast'] * (1.0 + sharp_factor * 0.4)
+            enhanced['saturation'] = filters['saturation'] * (1.0 + sharp_factor * 0.3)
+            enhanced['gamma'] = filters['gamma'] * (1.0 - sharp_factor * 0.1)
+            # Clamp to valid VLC ranges
+            enhanced['contrast'] = max(0.0, min(2.0, enhanced['contrast']))
+            enhanced['saturation'] = max(0.0, min(3.0, enhanced['saturation']))
+            enhanced['gamma'] = max(0.01, min(10.0, enhanced['gamma']))
+            apply_filters_to_player(self.player, enhanced)
+        else:
+            apply_filters_to_player(self.player, filters)
 
     def open_file_dialog(self):
         files, _ = QFileDialog.getOpenFileNames(
@@ -407,9 +666,28 @@ class MainWindow(QMainWindow):
                 self.osd.show_screenshot(filename)
 
     def _on_mouse_moved(self):
-        """Show control bar on mouse move over video."""
+        """Show control bar + cursor on mouse move over video."""
         self.control_bar.reset_hide_timer()
         self.setCursor(Qt.CursorShape.ArrowCursor)
+        self._reset_cursor_hide_timer()
+
+    def _reset_cursor_hide_timer(self):
+        """Restart the cursor auto-hide countdown (only when playing)."""
+        if self.player.get_state() == vlc.State.Playing:
+            self._cursor_hide_timer.start(3000)
+
+    def _pause_cursor_hide(self):
+        """Keep cursor visible when hovering the control bar."""
+        self._cursor_hide_timer.stop()
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def _resume_cursor_hide(self):
+        """Restart cursor hide countdown when leaving the control bar."""
+        self._reset_cursor_hide_timer()
+
+    def _on_cursor_hide_timeout(self):
+        """Hide the cursor after inactivity."""
+        self.setCursor(Qt.CursorShape.BlankCursor)
 
     # ── Drag and Drop ─────────────────────────────────────────────────
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -435,6 +713,88 @@ class MainWindow(QMainWindow):
              # Play last added (or first if playlist was empty)
              self.play_file(self.playlist_panel.model.get_item(0).filepath)
 
+    # ── Update Checking ────────────────────────────────────────────────
+    def _auto_check_updates(self):
+        """Run a silent update check on startup if auto-check is due."""
+        if not self.update_checker:
+            return
+
+        auto_check, interval = self._get_auto_check_settings()
+        if not auto_check:
+            return
+
+        last_check = self.settings.load_last_update_check()
+        if last_check > 0 and (time.time() - last_check) < interval * 3600:
+            return  # Not due yet
+
+        self._run_update_check(silent=True)
+
+    def _get_auto_check_settings(self) -> tuple:
+        """Return (auto_check_enabled, interval_hours)."""
+        _, enabled, interval = self.settings.load_update_settings()
+        return enabled, interval
+
+    def _run_update_check(self, silent: bool = False):
+        """Check for updates. When silent, only notify if a new version is found."""
+        if not self.update_checker:
+            if not silent:
+                self.osd.show_message("Configure a GitHub repo in Settings → Updates first")
+            return
+
+        # Run the HTTP request in a background thread to avoid blocking the UI
+        import threading
+
+        def _check():
+            try:
+                release = self.update_checker.check_for_updates()
+                # Mark this check as done regardless of result
+                self.settings.save_last_update_check(time.time())
+
+                if release:
+                    # Check if the user already skipped this version
+                    skipped = self.settings.load_skipped_version()
+                    if silent and skipped == release.version:
+                        return  # Only skip silently during auto-checks
+
+                    def show_dialog():
+                        dialog = UpdateAvailableDialog(release, self)
+                        result = dialog.exec()
+                        if result == QDialog.DialogCode.Rejected:
+                            # User clicked "Remind Me Later" — skip this version
+                            self.settings.save_skipped_version(release.version)
+                    QTimer.singleShot(0, show_dialog)
+                    return
+                elif not silent:
+                    def show_uptodate():
+                        UpToDateDialog(self).exec()
+                    QTimer.singleShot(0, show_uptodate)
+            except Exception:
+                if not silent:
+                    def show_error():
+                        self.osd.show_message("Update check failed — check your connection")
+                    QTimer.singleShot(0, show_error)
+
+        thread = threading.Thread(target=_check, daemon=True)
+        thread.start()
+
+    def check_for_updates_now(self):
+        """Called from menu/tray action — runs update check with full feedback."""
+        self.osd.show_message("Checking for updates…")
+        self._run_update_check(silent=False)
+
+    def open_update_settings(self):
+        """Open the update configuration dialog."""
+        dialog = UpdateSettingsDialog(self, self.settings)
+        if dialog.exec():
+            repo, auto_check, interval = dialog.get_values()
+            self.settings.save_update_settings(repo, auto_check, interval)
+            # Recreate the checker with the new repo
+            self.update_checker = UpdateChecker(repo) if repo else None
+            self.osd.show_message("Update settings saved")
+            # Run check now if they just configured a repo
+            if repo:
+                QTimer.singleShot(500, self._run_update_check)
+
     # ── Shutdown ──────────────────────────────────────────────────────
     def closeEvent(self, event):
         try:
@@ -459,6 +819,12 @@ class MainWindow(QMainWindow):
             
         try:
             self.tray.hide()
+        except Exception:
+            pass
+
+        # Close Discord RPC connection
+        try:
+            self.discord_rpc.close()
         except Exception:
             pass
             

@@ -2,6 +2,7 @@
 Playlist UI panel with list view and control buttons.
 """
 import os
+import subprocess
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QListView, QMenu, QFileDialog, QMessageBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QModelIndex, QUrl
@@ -126,8 +127,9 @@ class PlaylistPanel(QWidget):
         item = self.model.get_item(index.row())
         if item and os.path.exists(item.filepath):
             # Windows specific explorer selection
+            # Use subprocess with a list to avoid shell injection (VULN-001 fix)
             if os.name == 'nt':
-                os.system(f'explorer /select,"{item.filepath}"')
+                subprocess.run(['explorer', '/select,', os.path.normpath(item.filepath)])
                 
     def _add_files(self):
         files, _ = QFileDialog.getOpenFileNames(

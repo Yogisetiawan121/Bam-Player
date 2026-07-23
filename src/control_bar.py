@@ -2,8 +2,9 @@
 Overlay control bar with auto-hide behavior.
 Contains play/pause, seek, volume, speed, and other playback controls.
 """
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QMenu
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve, QSize
+from PyQt6.QtGui import QAction
 import qtawesome as qta
 from .styles import get_control_bar_stylesheet
 from .seek_bar import SeekBar
@@ -23,7 +24,11 @@ class ControlBar(QWidget):
     playlist_toggle_requested = pyqtSignal()
     open_requested = pyqtSignal()
     subtitle_settings_requested = pyqtSignal()
+    subtitle_toggle_requested = pyqtSignal()
     video_filters_requested = pyqtSignal()
+    enhancement_toggle_requested = pyqtSignal()
+    mouse_entered = pyqtSignal()
+    mouse_left = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -139,10 +144,14 @@ class ControlBar(QWidget):
         self.btn_sub.setIconSize(QSize(20, 20))
         self.btn_sub.setFixedSize(32, 32)
         self.btn_sub.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_sub.setObjectName("controlButton")
-        self.btn_sub.setToolTip("Subtitles")
-        self.btn_sub.clicked.connect(self.subtitle_settings_requested.emit)
+        self.btn_sub.setObjectName("subtitleButton")
+        self.btn_sub.setToolTip("Toggle Subtitles (Ctrl+D) — Right-click for settings")
+        self.btn_sub.clicked.connect(self.subtitle_toggle_requested.emit)
+        self.btn_sub.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.btn_sub.customContextMenuRequested.connect(self._show_subtitle_context_menu)
         ctrl_layout.addWidget(self.btn_sub)
+
+        self._subtitles_active = True
         
         self.btn_filter = QPushButton()
         self.btn_filter.setIcon(qta.icon('mdi6.tune', color='#e8e8f0'))
@@ -153,6 +162,18 @@ class ControlBar(QWidget):
         self.btn_filter.setToolTip("Video Filters")
         self.btn_filter.clicked.connect(self.video_filters_requested.emit)
         ctrl_layout.addWidget(self.btn_filter)
+
+        self.btn_enhance = QPushButton()
+        self.btn_enhance.setIcon(qta.icon('mdi6.magic-staff', color='#8888a0'))
+        self.btn_enhance.setIconSize(QSize(20, 20))
+        self.btn_enhance.setFixedSize(32, 32)
+        self.btn_enhance.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_enhance.setObjectName("enhanceButton")
+        self.btn_enhance.setToolTip("Toggle Real-time Enhancement (Ctrl+E)")
+        self.btn_enhance.clicked.connect(self.enhancement_toggle_requested.emit)
+        ctrl_layout.addWidget(self.btn_enhance)
+        
+        self._enhancement_active = False
         
         self.btn_playlist = QPushButton()
         self.btn_playlist.setIcon(qta.icon('mdi6.playlist-music', color='#e8e8f0'))
@@ -175,6 +196,58 @@ class ControlBar(QWidget):
         ctrl_layout.addWidget(self.btn_fullscreen)
         
         main_layout.addLayout(ctrl_layout)
+
+    def set_enhancement_active(self, active: bool):
+        """Update the enhancement button appearance to reflect its state."""
+        self._enhancement_active = active
+        icon_color = '#a29bfe' if active else '#8888a0'
+        self.btn_enhance.setIcon(qta.icon('mdi6.magic-staff', color=icon_color))
+        self.btn_enhance.setToolTip(
+            "Disable Enhancement (Ctrl+E)" if active else "Enable Enhancement (Ctrl+E)"
+        )
+        if active:
+            self.btn_enhance.setProperty("active", "true")
+        else:
+            self.btn_enhance.setProperty("active", "false")
+        self.btn_enhance.style().unpolish(self.btn_enhance)
+        self.btn_enhance.style().polish(self.btn_enhance)
+
+    def set_subtitle_active(self, active: bool):
+        """Update the subtitle button appearance to reflect subtitle visibility."""
+        self._subtitles_active = active
+        icon_color = '#e8e8f0' if active else '#8888a0'
+        self.btn_sub.setIcon(qta.icon('mdi6.subtitles-outline', color=icon_color))
+        self.btn_sub.setProperty("active", "true" if active else "false")
+        self.btn_sub.style().unpolish(self.btn_sub)
+        self.btn_sub.style().polish(self.btn_sub)
+
+    def _show_subtitle_context_menu(self, pos):
+        """Show context menu for subtitle button (settings access)."""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #1e1e2e;
+                color: #e8e8f0;
+                border: 1px solid #3a3a4e;
+                border-radius: 6px;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #6c5ce7;
+            }
+        """)
+        toggle_action = QAction("Toggle Subtitles", self)
+        toggle_action.triggered.connect(self.subtitle_toggle_requested.emit)
+        menu.addAction(toggle_action)
+        menu.addSeparator()
+        settings_action = QAction("Subtitle Settings…", self)
+        settings_action.triggered.connect(self.subtitle_settings_requested.emit)
+        menu.addAction(settings_action)
+        menu.exec(self.btn_sub.mapToGlobal(pos))
 
     def set_playing_state(self, playing: bool):
         self.is_playing = playing
@@ -202,10 +275,12 @@ class ControlBar(QWidget):
     def enterEvent(self, event):
         """Stop hiding when mouse enters."""
         self._hide_timer.stop()
+        self.mouse_entered.emit()
         super().enterEvent(event)
         
     def leaveEvent(self, event):
         """Resume hiding when mouse leaves."""
         if self.is_playing:
             self._hide_timer.start(3000)
+        self.mouse_left.emit()
         super().leaveEvent(event)

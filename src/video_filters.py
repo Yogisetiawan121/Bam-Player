@@ -1,23 +1,26 @@
 """
 Video filters dialog and VLC integration.
 Adjust brightness, contrast, saturation, hue, and gamma in real-time.
+Includes a real-time Enhancement section with sharpness simulation.
 """
 import vlc
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QSlider, QPushButton, QGroupBox)
+                             QSlider, QPushButton, QGroupBox, QCheckBox)
 from PyQt6.QtCore import Qt, pyqtSignal
 from .styles import get_filter_dialog_stylesheet
 
 
 class VideoFiltersDialog(QDialog):
-    """Dialog for adjusting video color filters."""
+    """Dialog for adjusting video color filters and enhancement."""
 
     filters_changed = pyqtSignal(dict)
+    enhancement_changed = pyqtSignal(bool, float)  # enabled, sharpness
     
-    def __init__(self, parent=None, current_filters=None):
+    def __init__(self, parent=None, current_filters=None, 
+                 enhancement_enabled=False, enhancement_sharpness=0.0):
         super().__init__(parent)
-        self.setWindowTitle("Video Filters")
-        self.setFixedSize(350, 400)
+        self.setWindowTitle("Video Filters & Enhancement")
+        self.setFixedSize(380, 560)
         self.setStyleSheet(get_filter_dialog_stylesheet())
         
         self.current_filters = current_filters or {
@@ -27,16 +30,19 @@ class VideoFiltersDialog(QDialog):
             'hue': 0,
             'gamma': 1.0
         }
+        self._enhancement_enabled = enhancement_enabled
+        self._enhancement_sharpness = enhancement_sharpness
         
         self._setup_ui()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        layout.setSpacing(12)
         
+        # ── Basic Adjustments ──────────────────────────────────────────
         group = QGroupBox("Adjustments", self)
         group_layout = QVBoxLayout(group)
-        group_layout.setSpacing(20)
+        group_layout.setSpacing(16)
         
         # Brightness (0.0 to 2.0, default 1.0)
         self.bright_slider, self.bright_val = self._create_slider(
@@ -65,7 +71,59 @@ class VideoFiltersDialog(QDialog):
         
         layout.addWidget(group)
         
-        # Buttons
+        # ── Real-time Enhancement ──────────────────────────────────────
+        enhance_group = QGroupBox("Real-time Enhancement", self)
+        enhance_group.setObjectName("enhanceGroup")
+        enhance_layout = QVBoxLayout(enhance_group)
+        enhance_layout.setSpacing(12)
+        
+        # Master toggle
+        toggle_row = QHBoxLayout()
+        self.enhance_check = QCheckBox("Enable Enhancement")
+        self.enhance_check.setChecked(self._enhancement_enabled)
+        self.enhance_check.toggled.connect(self._on_enhancement_toggled)
+        toggle_row.addWidget(self.enhance_check)
+        toggle_row.addStretch()
+        enhance_layout.addLayout(toggle_row)
+        
+        # Sharpness slider (built manually so it doesn't trigger _on_filter_changed)
+        sharp_row = QHBoxLayout()
+        sharp_label = QLabel("Sharpness")
+        sharp_label.setFixedWidth(80)
+        self.enhance_slider = QSlider(Qt.Orientation.Horizontal)
+        self.enhance_slider.setRange(0, 100)
+        self.enhance_slider.setValue(int(self._enhancement_sharpness))
+        self.enhance_slider.setEnabled(self._enhancement_enabled)
+        self.enhance_val = QLabel()
+        self.enhance_val.setObjectName("filterValue")
+        self.enhance_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.enhance_val.setText(f"{int(self._enhancement_sharpness)}%")
+        
+        def _on_enhance_slider_changed(val):
+            self.enhance_val.setText(f"{val}%")
+            self._emit_enhancement()
+        
+        self.enhance_slider.valueChanged.connect(_on_enhance_slider_changed)
+        
+        sharp_row.addWidget(sharp_label)
+        sharp_row.addWidget(self.enhance_slider)
+        sharp_row.addWidget(self.enhance_val)
+        enhance_layout.addLayout(sharp_row)
+        
+        # Description label
+        desc = QLabel(
+            "Enhances visual clarity by intelligently boosting \n"
+            "contrast, saturation, and gamma in real-time.\n"
+            "Works alongside your manual adjustments above."
+        )
+        desc.setObjectName("enhanceDesc")
+        desc.setWordWrap(True)
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        enhance_layout.addWidget(desc)
+        
+        layout.addWidget(enhance_group)
+        
+        # ── Buttons ────────────────────────────────────────────────────
         btn_layout = QHBoxLayout()
         reset_btn = QPushButton("Reset Defaults")
         reset_btn.clicked.connect(self._reset_filters)
@@ -79,7 +137,8 @@ class VideoFiltersDialog(QDialog):
         
         layout.addLayout(btn_layout)
 
-    def _create_slider(self, name, min_val, max_val, current, layout, is_hue=False):
+    def _create_slider(self, name, min_val, max_val, current, layout, 
+                       is_hue=False):
         row = QHBoxLayout()
         
         label = QLabel(name)
@@ -115,12 +174,25 @@ class VideoFiltersDialog(QDialog):
         layout.addLayout(row)
         return slider, val_label
 
+    def _on_enhancement_toggled(self, enabled: bool):
+        self.enhance_slider.setEnabled(enabled)
+        self._emit_enhancement()
+
+    def _emit_enhancement(self):
+        enabled = self.enhance_check.isChecked()
+        sharpness = self.enhance_slider.value()
+        self._enhancement_enabled = enabled
+        self._enhancement_sharpness = sharpness
+        self.enhancement_changed.emit(enabled, sharpness)
+
     def _reset_filters(self):
         self.bright_slider.setValue(100)
         self.contrast_slider.setValue(100)
         self.sat_slider.setValue(100)
         self.hue_slider.setValue(0)
         self.gamma_slider.setValue(100)
+        self.enhance_check.setChecked(False)
+        self.enhance_slider.setValue(50)
 
     def _on_filter_changed(self):
         self.current_filters = {
@@ -131,6 +203,8 @@ class VideoFiltersDialog(QDialog):
             'gamma': self.gamma_slider.value() / 100.0
         }
         self.filters_changed.emit(self.current_filters)
+        # Also emit enhancement since sharpness slider may have changed
+        self._emit_enhancement()
 
 
 def apply_filters_to_player(player: vlc.MediaPlayer, filters: dict):

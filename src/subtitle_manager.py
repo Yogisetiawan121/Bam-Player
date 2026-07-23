@@ -20,6 +20,7 @@ class SubtitleManager:
         self.settings = settings_manager
         self.prefs = self.settings.load_subtitle_prefs()
         self.current_sub_path = None
+        self._saved_spu_track = None  # Stores last active track for toggle
         
     def auto_load_subtitle(self, player: vlc.MediaPlayer, video_path: str) -> bool:
         """Attempt to automatically find and load a matching subtitle file."""
@@ -37,22 +38,38 @@ class SubtitleManager:
         """Load a specific subtitle file into the player."""
         if not os.path.exists(sub_path):
             return False
-            
-        # VLC returns 1 on success, 0 on failure
-        success = player.video_set_subtitle_file(sub_path)
-        if success:
+
+        # video_set_subtitle_file returns 0 on success (via libvlc C API)
+        result = player.video_set_subtitle_file(sub_path)
+        if result == 0:
             self.current_sub_path = sub_path
             self.apply_styles(player)
-            # Enable subtitle track if disabled
-            if not self.prefs.get('enabled', True):
-                player.video_set_spu(0) # Disable
-            else:
-                # Get track count, if > 0, set to the first track (or previously selected)
-                # In VLC, track 0 is typically disabled, track 1 is first sub
-                # We just let VLC handle track selection on load, but we ensure it's not explicitly disabled
-                pass
             return True
         return False
+
+    def toggle_subtitles(self, player: vlc.MediaPlayer) -> bool:
+        """Real-time toggle of subtitle visibility.
+
+        If subtitles are currently active (any track), disables them.
+        If subtitles are disabled, re-activates the last used track (or track 1).
+        Returns the new active state (True = visible, False = hidden).
+        """
+        current_track = player.video_get_spu()
+
+        if current_track < 0:
+            # Subtitles are off — restore the saved track, or use the first track
+            target = self._saved_spu_track if self._saved_spu_track is not None else 1
+            # If there are no subtitle tracks at all, still try
+            if target < 0:
+                target = 1
+            player.video_set_spu(target)
+            self._saved_spu_track = None
+            return True
+        else:
+            # Subtitles are on — save current track and disable
+            self._saved_spu_track = current_track
+            player.video_set_spu(-1)
+            return False
         
     def apply_styles(self, player: vlc.MediaPlayer):
         """Apply current styling preferences to VLC."""
