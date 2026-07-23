@@ -35,18 +35,7 @@ jobs:
     # and copy libvlc.dll, libvlccore.dll, and the plugins directory into dist/BamPlayer/.
         
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: BamPlayer-Windows
         path: dist/BamPlayer
-        
-    - name: Upload Release Asset
-      if: github.event_name == 'release'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./dist/BamPlayer.zip  # Requires a zip step prior
-        asset_name: BamPlayer-Windows.zip
-        asset_content_type: application/zip
