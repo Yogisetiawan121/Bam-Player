@@ -7,7 +7,7 @@
 ; ─────────────────────────────────────────────────────────────
 
 #define MyAppName "Bam Player"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Yogisetiawan121"
 #define MyAppURL "https://github.com/Yogisetiawan121/bam-player"
 #define MyAppDirName "BamPlayer"         ; PyInstaller output folder name (no .exe)
@@ -46,8 +46,6 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "dist\{#MyAppDirName}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; VLC runtime and Python extension modules
 Source: "dist\{#MyAppDirName}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\{#MyAppDirName}\*.pyd"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\{#MyAppDirName}\*.pak"; DestDir: "{app}"; Flags: ignoreversion
 ; VLC plugins
 Source: "dist\{#MyAppDirName}\plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; PyInstaller internal bundle (present in PyInstaller 6+)

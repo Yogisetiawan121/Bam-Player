@@ -76,8 +76,10 @@ class DiscordRPC:
         "kuroshitsuji movie book of the atlantic": "Kuroshitsuji Movie: Book of the Atlantic",
         "kuroshitsuji s4":                        "Kuroshitsuji Season 4",
         "kuroshitsuji midori":                    "Kuroshitsuji Midori (Emerald Witch Arc)",
-         # ── Yani Neko ──────────────────────────────────────────
+        # ── Yani Neko ──────────────────────────────────────────
         "yani neko":                                "Yani Neko",
+        # ── Kimetsu No Yaiba ──────────────────────────────────────────
+        "kimetsu no yaiba":                         "Kimetsu No Yaiba",
         # ── Other shows ────────────────────────────────────────
         "nippon sangoku":                          "Nippon Sangoku",
     }
@@ -104,6 +106,8 @@ class DiscordRPC:
         "Kuroshitsuji Midori (Emerald Witch Arc)":     "kuroshitsuji_midori",
         # ── Yani Neko ──────────────────────────────────────────
         "Yani Neko":                                "yani_neko",
+        # ── Kimetsu No Yaiba ──────────────────────────────────────────
+        "Kimetsu No Yaiba":                          "kimetsu_no_yaiba",
         # ── Other shows ────────────────────────────────────────
         "Nippon Sangoku":                          "nippon_sangoku"
     }
