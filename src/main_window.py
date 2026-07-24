@@ -27,7 +27,7 @@ from .utils import get_pictures_folder, get_video_files_from_dir
 from .discord_rpc import DiscordRPC
 from .update_checker import UpdateChecker, ReleaseInfo
 from .update_dialog import (UpdateAvailableDialog, UpToDateDialog,
-                                UpdateSettingsDialog, UpdateDownloadDialog)
+                                UpdateDownloadDialog)
 
 
 class MainWindow(QMainWindow):
@@ -119,48 +119,6 @@ class MainWindow(QMainWindow):
         self.tray = SystemTrayIntegration(icon, self)
         self.tray.show()
 
-        # ── Menu Bar (Help → Updates) ──
-        self._setup_menu_bar()
-
-    def _setup_menu_bar(self):
-        """Create the application menu bar with update-related entries."""
-        from PyQt6.QtWidgets import QMenuBar
-        from PyQt6.QtGui import QAction
-        from . import __app_name__
-
-        self._menubar = self.menuBar()
-        self._menubar.setNativeMenuBar(False)  # Ensure cross-platform consistency
-
-        # Help menu
-        help_menu = self._menubar.addMenu("&Help")
-
-        self._action_check_updates = QAction(qta.icon('mdi6.update', color='#e8e8f0'), "Check for Updates…", self)
-        self._action_check_updates.triggered.connect(self.check_for_updates_now)
-        help_menu.addAction(self._action_check_updates)
-
-        help_menu.addSeparator()
-
-        self._action_update_settings = QAction(qta.icon('mdi6.cog-outline', color='#e8e8f0'), "Update Settings…", self)
-        self._action_update_settings.triggered.connect(self.open_update_settings)
-        help_menu.addAction(self._action_update_settings)
-
-        help_menu.addSeparator()
-
-        about_action = QAction(qta.icon('mdi6.information-outline', color='#e8e8f0'), f"About {__app_name__}", self)
-        about_action.triggered.connect(self._show_about_dialog)
-        help_menu.addAction(about_action)
-
-    def _show_about_dialog(self):
-        """Show a simple about dialog."""
-        from . import __version__, __app_name__
-        QMessageBox.about(
-            self,
-            f"About {__app_name__}",
-            f"<h2>{__app_name__}</h2>"
-            f"<p>Version {__version__}</p>"
-            f"<p>A modern media player built with Python, PyQt6, and libVLC.</p>"
-        )
-
     def _on_video_container_resize(self, event):
         """Handle resizing to keep overlays positioned correctly."""
         QWidget.resizeEvent(self.video_container, event)
@@ -234,8 +192,7 @@ class MainWindow(QMainWindow):
         self.tray.play_pause_requested.connect(self.toggle_playback)
         self.tray.next_requested.connect(self.play_next)
         self.tray.prev_requested.connect(self.play_prev)
-        self.tray.check_updates_requested.connect(self.check_for_updates_now)
-        self.tray.update_settings_requested.connect(self.open_update_settings)
+
         self.tray.quit_requested.connect(self.close)
 
         # Control Bar — mouse enter/leave for cursor auto-hide
@@ -522,11 +479,7 @@ class MainWindow(QMainWindow):
 
     def set_fullscreen(self, fullscreen: bool):
         self.is_fullscreen = fullscreen
-        
-        # Hide menu bar in fullscreen (no Help section cluttering the view)
-        if hasattr(self, '_menubar'):
-            self._menubar.setVisible(not fullscreen)
-        
+
         # Windows 11 rounded corners fix
         import sys
         if sys.platform == "win32":
@@ -792,22 +745,6 @@ class MainWindow(QMainWindow):
 
         thread = threading.Thread(target=_check, daemon=True)
         thread.start()
-
-    def check_for_updates_now(self):
-        """Called from menu/tray action — runs update check with full feedback."""
-        self.osd.show_message("Checking for updates…")
-        self._run_update_check(silent=False)
-
-    def open_update_settings(self):
-        """Open the update configuration dialog."""
-        from .update_checker import DEFAULT_REPO
-        dialog = UpdateSettingsDialog(self, self.settings)
-        if dialog.exec():
-            repo, auto_check, interval = dialog.get_values()
-            self.settings.save_update_settings(repo, auto_check, interval)
-            # Recreate the checker with the (possibly changed) repo
-            self.update_checker = UpdateChecker(repo or DEFAULT_REPO)
-            self.osd.show_message("Update settings saved")
 
     def _download_and_install_update(self, release: ReleaseInfo):
         """Download the installer, then open the folder in Explorer.

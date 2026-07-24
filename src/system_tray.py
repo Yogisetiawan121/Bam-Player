@@ -17,8 +17,6 @@ class SystemTrayIntegration(QSystemTrayIcon):
     play_pause_requested = pyqtSignal()
     next_requested = pyqtSignal()
     prev_requested = pyqtSignal()
-    check_updates_requested = pyqtSignal()
-    update_settings_requested = pyqtSignal()
     quit_requested = pyqtSignal()
     
     def __init__(self, icon: QIcon, parent=None):
@@ -44,17 +42,6 @@ class SystemTrayIntegration(QSystemTrayIcon):
         self.action_next = QAction(qta.icon('mdi6.skip-next', color='#e8e8f0'), "Next", self.menu)
         self.action_next.triggered.connect(self.next_requested.emit)
         self.menu.addAction(self.action_next)
-        
-        self.menu.addSeparator()
-        
-        # ── Update section ──
-        self.action_check_updates = QAction(qta.icon('mdi6.update', color='#e8e8f0'), "Check for Updates…", self.menu)
-        self.action_check_updates.triggered.connect(self.check_updates_requested.emit)
-        self.menu.addAction(self.action_check_updates)
-        
-        self.action_update_settings = QAction(qta.icon('mdi6.cog-outline', color='#e8e8f0'), "Update Settings…", self.menu)
-        self.action_update_settings.triggered.connect(self.update_settings_requested.emit)
-        self.menu.addAction(self.action_update_settings)
         
         self.menu.addSeparator()
         
