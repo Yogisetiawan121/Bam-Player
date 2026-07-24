@@ -4,9 +4,12 @@ Main application window integrating all components.
 import os
 import sys
 import time
+import subprocess
+import webbrowser
 import vlc
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QFileDialog, QMessageBox, QSplitter, QDialog)
+                             QFileDialog, QMessageBox, QSplitter, QDialog,
+                             QApplication)
 from PyQt6.QtCore import Qt, QTimer, QUrl, QSize
 from PyQt6.QtGui import QIcon, QDropEvent, QDragEnterEvent
 import qtawesome as qta
@@ -23,9 +26,9 @@ from .styles import get_main_stylesheet
 from .shortcuts import setup_shortcuts
 from .utils import get_pictures_folder, get_video_files_from_dir
 from .discord_rpc import DiscordRPC
-from .update_checker import UpdateChecker
+from .update_checker import UpdateChecker, ReleaseInfo
 from .update_dialog import (UpdateAvailableDialog, UpToDateDialog,
-                                UpdateSettingsDialog)
+                                UpdateSettingsDialog, UpdateDownloadDialog)
 
 
 class MainWindow(QMainWindow):
@@ -714,7 +717,7 @@ class MainWindow(QMainWindow):
              # Play last added (or first if playlist was empty)
              self.play_file(self.playlist_panel.model.get_item(0).filepath)
 
-    # ── Update Checking ────────────────────────────────────────────────
+    # ── Update Checking & Auto-Install ─────────────────────────────────
     def _auto_check_updates(self):
         """Run a silent update check on startup if auto-check is due."""
         if not self.update_checker:
@@ -761,6 +764,11 @@ class MainWindow(QMainWindow):
                         if result == QDialog.DialogCode.Rejected:
                             # User clicked "Remind Me Later" — skip this version
                             self.settings.save_skipped_version(release.version)
+                        elif result == QDialog.DialogCode.Accepted:
+                            # User clicked "Download & Install" — start auto-install
+                            QTimer.singleShot(
+                                0, lambda r=release: self._download_and_install_update(r)
+                            )
                     QTimer.singleShot(0, show_dialog)
                     return
                 elif not silent:
@@ -791,6 +799,60 @@ class MainWindow(QMainWindow):
             # Recreate the checker with the (possibly changed) repo
             self.update_checker = UpdateChecker(repo or DEFAULT_REPO)
             self.osd.show_message("Update settings saved")
+
+    def _download_and_install_update(self, release: ReleaseInfo):
+        """Download the installer and then install it.
+
+        If the download URL isn't an .exe (e.g. portable zip or source),
+        fall back to opening it in the browser instead.
+        """
+        url = release.download_url
+        if not url.lower().endswith(".exe"):
+            # Not an installer — open in browser as before
+            webbrowser.open(url)
+            self.osd.show_message(
+                f"Download opened in your browser (v{release.version})"
+            )
+            return
+
+        dialog = UpdateDownloadDialog(release, self)
+        result = dialog.exec()
+
+        if result == QDialog.DialogCode.Accepted and dialog.installer_path:
+            self._perform_install(dialog.installer_path)
+        # If rejected (cancel/later), do nothing — user can check again later
+
+    def _perform_install(self, installer_path: str):
+        """Launch the installer silently and close the app.
+
+        The installer uses CloseApplications=yes (from installer.iss) to
+        gracefully shut down this process before replacing files, and it
+        auto-launches the new version after installation completes.
+        """
+        if not os.path.exists(installer_path):
+            QMessageBox.critical(
+                self,
+                "Update Error",
+                "Installer file not found. Try downloading again.",
+            )
+            return
+
+        try:
+            # Launch silent installer — no UI, no questions
+            subprocess.Popen(
+                [installer_path, "/VERYSILENT", "/SUPPRESSMSGBOXES"],
+                close_fds=True,
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Update Error",
+                f"Failed to launch the installer:\n{e}",
+            )
+            return
+
+        # Brief delay to let the installer process start, then close the app.
+        # Inno Setup's CloseApplications=yes will detect and handle this process.
+        QTimer.singleShot(500, QApplication.quit)
 
     # ── Shutdown ──────────────────────────────────────────────────────
     def closeEvent(self, event):

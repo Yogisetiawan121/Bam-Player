@@ -53,7 +53,7 @@ class DiscordRPC:
     """
 
     # Create your own app at https://discord.com/developers/applications
-    # and paste its Client ID here (or pass it to the constructor).
+    # and paste its Application (Client) ID here (or pass it to the constructor).
     DEFAULT_CLIENT_ID = "1529520230018060391"
 
     # ── Filename overrides ───────────────────────────────────────────
@@ -80,6 +80,11 @@ class DiscordRPC:
         "yani neko":                                "Yani Neko",
         # ── Kimetsu No Yaiba ──────────────────────────────────────────
         "kimetsu no yaiba":                         "Kimetsu No Yaiba",
+        # ── Frieren ──────────────────────────────────────────
+        "frieren beyond journey's end": "Frieren Beyond Journey's End",
+        # ── Chainsaw Man ──────────────────────────────────────────
+        "chainsaw man": "Chainsaw Man",
+        "chainsaw man reze arc": "Chainsaw Man Reze Arc",
         # ── Other shows ────────────────────────────────────────
         "nippon sangoku":                          "Nippon Sangoku",
     }
@@ -108,6 +113,11 @@ class DiscordRPC:
         "Yani Neko":                                "yani_neko",
         # ── Kimetsu No Yaiba ──────────────────────────────────────────
         "Kimetsu No Yaiba":                          "kimetsu_no_yaiba",
+        # ── Frieren ──────────────────────────────────────────
+        "Frieren Beyond Journey's End": "frieren_beyond_journeys_end",
+        # ── Chainsaw Man ──────────────────────────────────────────
+        "Chainsaw Man": "chainsaw_man",
+        "Chainsaw Man: Reze Arc": "chainsaw_man_reze_arc",
         # ── Other shows ────────────────────────────────────────
         "Nippon Sangoku":                          "nippon_sangoku"
     }

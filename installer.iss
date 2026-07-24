@@ -7,7 +7,7 @@
 ; ─────────────────────────────────────────────────────────────
 
 #define MyAppName "Bam Player"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Yogisetiawan121"
 #define MyAppURL "https://github.com/Yogisetiawan121/bam-player"
 #define MyAppDirName "BamPlayer"         ; PyInstaller output folder name (no .exe)
@@ -57,4 +57,4 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall

@@ -2,13 +2,18 @@
 Update notification dialog.
 Shows available release info with release notes, version diff, and a download button.
 """
-import webbrowser
+import os
+import ssl
+import tempfile
+import urllib.request
+import urllib.error
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextBrowser, QWidget, QSizePolicy, QSpacerItem,
-    QCheckBox, QSpinBox,
+    QCheckBox, QSpinBox, QProgressBar, QMessageBox,
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread, QObject, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QPixmap, QIcon
 import qtawesome as qta
 
@@ -146,19 +151,390 @@ class UpdateAvailableDialog(QDialog):
 
         btn_row.addStretch()
 
-        download_btn = QPushButton("⬇  Download Update")
+        download_btn = QPushButton("⬇  Download & Install")
         download_btn.setObjectName("downloadBtn")
         download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        download_btn.clicked.connect(self._on_download)
+        download_btn.clicked.connect(lambda: self.accept())
         btn_row.addWidget(download_btn)
 
         layout.addLayout(btn_row)
 
-    def _on_download(self):
-        """Open the download URL in the default browser, then close."""
-        if self._release.download_url:
-            webbrowser.open(self._release.download_url)
-        self.accept()
+
+# ── Background Download Worker ──────────────────────────────────────
+
+class DownloadWorker(QObject):
+    """Downloads a file in a background thread, emitting progress signals."""
+
+    progress = pyqtSignal(int, int)   # bytes_downloaded, total_bytes
+    finished = pyqtSignal(str)        # file_path
+    error = pyqtSignal(str)           # error_message
+
+    def __init__(self, url: str, dest_path: str):
+        super().__init__()
+        self.url = url
+        self.dest_path = dest_path
+        self._cancelled = False
+
+    def cancel(self):
+        """Signal the download to stop at the next chunk."""
+        self._cancelled = True
+
+    def run(self):
+        """Perform the download (call from a QThread)."""
+        try:
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request(
+                self.url,
+                headers={
+                    "User-Agent": f"{__app_name__}-Updater/{__version__}",
+                },
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                chunk_size = 65536
+                with open(self.dest_path, "wb") as f:
+                    while True:
+                        if self._cancelled:
+                            self._cleanup()
+                            return
+                        chunk = resp.read(chunk_size)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        self.progress.emit(downloaded, total)
+
+            if not self._cancelled:
+                self.finished.emit(self.dest_path)
+        except urllib.error.HTTPError as e:
+            self.error.emit(f"Server error: {e.code} {e.reason}")
+        except urllib.error.URLError as e:
+            self.error.emit(f"Connection failed: {e.reason}")
+        except OSError as e:
+            self.error.emit(f"File error: {e.strerror}")
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def _cleanup(self):
+        """Remove partially-downloaded file on cancellation."""
+        try:
+            if os.path.exists(self.dest_path):
+                os.remove(self.dest_path)
+        except Exception:
+            pass
+
+
+# ── Download Progress Dialog ─────────────────────────────────────────
+
+class UpdateDownloadDialog(QDialog):
+    """Modal dialog that downloads the installer with a progress bar.
+
+    After download completes, the user can click "Install Now" to
+    launch the installer and close the app.
+    """
+
+    def __init__(self, release: ReleaseInfo, parent=None):
+        super().__init__(parent)
+        self._release = release
+        self.installer_path: str = ""
+        self._worker: DownloadWorker = None
+        self._thread: QThread = None
+        self._download_complete = False
+        self.setWindowTitle(f"Downloading Update — {__app_name__}")
+        self.setFixedSize(440, 200)
+        self.setWindowFlags(
+            self.windowFlags()
+            & ~Qt.WindowType.WindowContextHelpButtonHint
+            & ~Qt.WindowType.WindowCloseButtonHint  # prevent accidental close
+        )
+        self.setModal(True)
+        self._setup_ui()
+        self._start_download()
+
+    def _setup_ui(self):
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #0a0a0f;
+                border: 1px solid #1e1e2e;
+                border-radius: 12px;
+            }
+            QLabel#headerLabel {
+                color: #e8e8f0;
+                font-size: 16px;
+                font-weight: 700;
+            }
+            QLabel#infoLabel {
+                color: #8888a0;
+                font-size: 12px;
+            }
+            QProgressBar {
+                background-color: #12121a;
+                border: 1px solid #1e1e2e;
+                border-radius: 6px;
+                text-align: center;
+                color: #e8e8f0;
+                font-size: 12px;
+                height: 22px;
+            }
+            QProgressBar::chunk {
+                background-color: #6c5ce7;
+                border-radius: 5px;
+            }
+            QProgressBar#completeBar::chunk {
+                background-color: #51cf66;
+                border-radius: 5px;
+            }
+            QPushButton#actionBtn {
+                background-color: #6c5ce7;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 8px 24px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton#actionBtn:hover {
+                background-color: #a29bfe;
+            }
+            QPushButton#actionBtn:pressed {
+                background-color: #4834d4;
+            }
+            QPushButton#installBtn {
+                background-color: #51cf66;
+                color: #0a0a0f;
+                border: none;
+                border-radius: 8px;
+                padding: 8px 24px;
+                font-size: 14px;
+                font-weight: 700;
+            }
+            QPushButton#installBtn:hover {
+                background-color: #69db7c;
+            }
+            QPushButton#installBtn:pressed {
+                background-color: #40c057;
+            }
+            QPushButton#cancelBtn {
+                background-color: transparent;
+                color: #8888a0;
+                border: 1px solid #1e1e2e;
+                border-radius: 8px;
+                padding: 8px 20px;
+                font-size: 13px;
+            }
+            QPushButton#cancelBtn:hover {
+                color: #e8e8f0;
+                background-color: rgba(255,255,255,0.05);
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 20, 28, 20)
+        layout.setSpacing(12)
+
+        # ── Header ──
+        header_row = QHBoxLayout()
+        header_row.setSpacing(10)
+
+        self._icon_label = QLabel()
+        self._icon_label.setPixmap(
+            qta.icon("mdi6.download", color="#6c5ce7").pixmap(28, 28)
+        )
+        header_row.addWidget(self._icon_label)
+
+        self._header_label = QLabel("Downloading update…")
+        self._header_label.setObjectName("headerLabel")
+        header_row.addWidget(self._header_label)
+        header_row.addStretch()
+        layout.addLayout(header_row)
+
+        # ── Version info ──
+        self._version_label = QLabel(
+            f"Version {self._release.version}"
+        )
+        self._version_label.setObjectName("infoLabel")
+        layout.addWidget(self._version_label)
+
+        # ── Progress bar ──
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(True)
+        self._progress_bar.setFixedHeight(24)
+        layout.addWidget(self._progress_bar)
+
+        # ── Size label ──
+        self._size_label = QLabel("Preparing download…")
+        self._size_label.setObjectName("infoLabel")
+        layout.addWidget(self._size_label)
+
+        layout.addStretch()
+
+        # ── Buttons ──
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
+        btn_row.addStretch()
+
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.setObjectName("cancelBtn")
+        self._cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(self._cancel_btn)
+
+        self._action_btn = QPushButton("Downloading…")
+        self._action_btn.setObjectName("actionBtn")
+        self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._action_btn.setEnabled(False)
+        self._action_btn.setVisible(True)
+        self._action_btn.clicked.connect(self._on_install)
+        btn_row.addWidget(self._action_btn)
+
+        layout.addLayout(btn_row)
+
+    # ── Download lifecycle ───────────────────────────────────────────
+
+    def _start_download(self):
+        """Build the temp path and kick off the background download thread."""
+        dest_dir = tempfile.gettempdir()
+        exe_name = f"BamPlayer-{self._release.version}-Setup.exe"
+        dest_path = os.path.join(dest_dir, exe_name)
+        self.installer_path = dest_path
+
+        self._worker = DownloadWorker(self._release.download_url, dest_path)
+        self._thread = QThread(self)
+        self._worker.moveToThread(self._thread)
+
+        self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_download_finished)
+        self._worker.error.connect(self._on_download_error)
+        self._thread.finished.connect(self._worker.deleteLater)
+
+        self._thread.start()
+
+    @pyqtSlot(int, int)
+    def _on_progress(self, downloaded: int, total: int):
+        """Update progress bar and size label."""
+        if total > 0:
+            pct = int(downloaded * 100 / total)
+            self._progress_bar.setValue(pct)
+            self._size_label.setText(
+                f"{self._format_size(downloaded)} / {self._format_size(total)}"
+            )
+        else:
+            # Unknown total size — show indeterminate progress
+            self._progress_bar.setRange(0, 0)
+            self._size_label.setText(f"{self._format_size(downloaded)} downloaded")
+
+    @pyqtSlot(str)
+    def _on_download_finished(self, path: str):
+        """Download complete — switch to install-ready UI."""
+        self._download_complete = True
+        self._progress_bar.setValue(100)
+        self._progress_bar.setObjectName("completeBar")
+        self._progress_bar.style().unpolish(self._progress_bar)
+        self._progress_bar.style().polish(self._progress_bar)
+
+        self._icon_label.setPixmap(
+            qta.icon("mdi6.check-circle", color="#51cf66").pixmap(28, 28)
+        )
+        self._header_label.setText("Update Ready!")
+
+        size_info = self._size_label.text()
+        self._size_label.setText(f"{size_info}  —  Ready to install")
+
+        self._cancel_btn.setText("Later")
+        self._cancel_btn.setObjectName("cancelBtn")  # keep same style
+
+        self._action_btn.setText("🚀  Install Now")
+        self._action_btn.setObjectName("installBtn")
+        self._action_btn.style().unpolish(self._action_btn)
+        self._action_btn.style().polish(self._action_btn)
+        self._action_btn.setEnabled(True)
+
+        self._thread.quit()
+
+    @pyqtSlot(str)
+    def _on_download_error(self, error_msg: str):
+        """Download failed — show error and offer retry."""
+        self._thread.quit()
+        self._icon_label.setPixmap(
+            qta.icon("mdi6.alert-circle", color="#ff6b6b").pixmap(28, 28)
+        )
+        self._header_label.setText("Download Failed")
+        self._size_label.setText(error_msg)
+
+        self._cancel_btn.setText("Close")
+        self._action_btn.setText("🔄  Retry")
+        self._action_btn.setObjectName("actionBtn")
+        self._action_btn.style().unpolish(self._action_btn)
+        self._action_btn.style().polish(self._action_btn)
+        self._action_btn.setEnabled(True)
+        self._action_btn.clicked.disconnect()
+        self._action_btn.clicked.connect(self._retry_download)
+
+    def _retry_download(self):
+        """Reset UI and start download again."""
+        self._progress_bar.setValue(0)
+        self._progress_bar.setRange(0, 100)
+        self._progress_bar.setObjectName("")
+        self._progress_bar.style().unpolish(self._progress_bar)
+        self._progress_bar.style().polish(self._progress_bar)
+
+        self._icon_label.setPixmap(
+            qta.icon("mdi6.download", color="#6c5ce7").pixmap(28, 28)
+        )
+        self._header_label.setText("Downloading update…")
+        self._size_label.setText("Preparing download…")
+
+        self._cancel_btn.setText("Cancel")
+        self._action_btn.setText("Downloading…")
+        self._action_btn.setObjectName("actionBtn")
+        self._action_btn.style().unpolish(self._action_btn)
+        self._action_btn.style().polish(self._action_btn)
+        self._action_btn.setEnabled(False)
+        self._action_btn.clicked.disconnect()
+        self._action_btn.clicked.connect(self._on_install)
+
+        self._start_download()
+
+    def _on_cancel(self):
+        """Cancel download or close dialog."""
+        if not self._download_complete and self._worker:
+            self._worker.cancel()
+        if self._thread and self._thread.isRunning():
+            self._thread.quit()
+            self._thread.wait(2000)
+        self.reject()
+
+    def _on_install(self):
+        """User clicked Install Now — accept the dialog."""
+        if self._download_complete:
+            self.accept()
+
+    # ── Helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _format_size(bytes_val: int) -> str:
+        """Return a human-readable size string (e.g. "12.3 MB")."""
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        elif bytes_val < 1024 * 1024:
+            return f"{bytes_val / 1024:.1f} KB"
+        elif bytes_val < 1024 * 1024 * 1024:
+            return f"{bytes_val / (1024 * 1024):.1f} MB"
+        else:
+            return f"{bytes_val / (1024 * 1024 * 1024):.1f} GB"
+
+    def closeEvent(self, event):
+        """Clean up the background thread on close."""
+        if self._worker and not self._download_complete:
+            self._worker.cancel()
+        if self._thread and self._thread.isRunning():
+            self._thread.quit()
+            self._thread.wait(2000)
+        super().closeEvent(event)
 
 
 class UpToDateDialog(QDialog):
