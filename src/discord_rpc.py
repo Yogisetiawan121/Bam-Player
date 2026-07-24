@@ -85,6 +85,13 @@ class DiscordRPC:
         # ── Chainsaw Man ──────────────────────────────────────────
         "chainsaw man": "Chainsaw Man",
         "chainsaw man reze arc": "Chainsaw Man Reze Arc",
+        "chainsaw man s2": "Chainsaw Man Season 2",
+        # ── Bungo Stray Dogs ────────────────────────────────────────
+        "bungo stray dogs": "Bungo Stray Dogs",
+        "bungo stray dogs s5": "Bungo Stray Dogs Season 5",
+        # ── Jujutsu Kaisen ────────────────────────────────────────
+        "jujutsu kaisen": "Jujutsu Kaisen",
+        "jujutsu kaisen s3": "Jujutsu Kaisen Season 3",
         # ── Other shows ────────────────────────────────────────
         "nippon sangoku":                          "Nippon Sangoku",
     }
@@ -118,6 +125,13 @@ class DiscordRPC:
         # ── Chainsaw Man ──────────────────────────────────────────
         "Chainsaw Man": "chainsaw_man",
         "Chainsaw Man: Reze Arc": "chainsaw_man_reze_arc",
+        "Chainsaw Man Season 2": "chainsaw_man_s2",
+        # ── Bungo Stray Dogs ────────────────────────────────────────
+        "Bungo Stray Dogs": "bungo_stray_dogs",
+        "Bungo Stray Dogs Season 5": "bungo_stray_dogs_s5",
+        # ── Jujutsu Kaisen ────────────────────────────────────────
+        "Jujutsu Kaisen": "jujutsu_kaisen",
+        "Jujutsu Kaisen Season 3": "jujutsu_kaisen_s3",
         # ── Other shows ────────────────────────────────────────
         "Nippon Sangoku":                          "nippon_sangoku"
     }

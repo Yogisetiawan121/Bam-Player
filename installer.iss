@@ -7,7 +7,7 @@
 ; ─────────────────────────────────────────────────────────────
 
 #define MyAppName "Bam Player"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.6.0"
 #define MyAppPublisher "Yogisetiawan121"
 #define MyAppURL "https://github.com/Yogisetiawan121/bam-player"
 #define MyAppDirName "BamPlayer"         ; PyInstaller output folder name (no .exe)
