@@ -69,14 +69,19 @@ class UpdateChecker:
         self._latest_release: Optional[ReleaseInfo] = None
 
     def check_for_updates(self, timeout: int = 10) -> Optional[ReleaseInfo]:
-        """Query GitHub releases and return a ReleaseInfo if a newer version exists."""
+        """Query GitHub releases and return a ReleaseInfo if a newer version exists.
+
+        Raises ConnectionError on network / API failures so callers can
+        distinguish "up-to-date" (returns None) from "check failed" (raises).
+        """
         if not self.repo:
             return None
 
         url = f"https://api.github.com/repos/{self.repo}/releases/latest"
 
         try:
-            ctx = ssl.create_default_context()
+            # Try to build an SSL context that works in frozen (PyInstaller) builds
+            ctx = self._make_ssl_context()
             req = urllib.request.Request(
                 url,
                 headers={
@@ -88,7 +93,7 @@ class UpdateChecker:
                 data = json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, urllib.error.HTTPError,
                 json.JSONDecodeError, OSError, ssl.SSLError) as exc:
-            return None
+            raise ConnectionError(f"Update check failed: {exc}") from exc
 
         # Parse tag as version  e.g. "v1.1.0" or "1.1.0"
         tag = data.get("tag_name", "")
@@ -114,6 +119,35 @@ class UpdateChecker:
         return self._latest_release
 
     # ── helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_ssl_context() -> ssl.SSLContext:
+        """Create an SSL context that works in both normal and frozen (PyInstaller) builds.
+
+        PyInstaller bundles often can't find system CA certificates, causing
+        ssl.create_default_context() to fail or produce a context with no CAs.
+        We try multiple fallback strategies.
+        """
+        # Strategy 1: Use certifi if available (PyInstaller often bundles it)
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            return ctx
+        except (ImportError, OSError):
+            pass
+
+        # Strategy 2: Normal default context (works outside PyInstaller)
+        try:
+            ctx = ssl.create_default_context()
+            return ctx
+        except (OSError, ssl.SSLError):
+            pass
+
+        # Strategy 3: Unverified context as last resort (still encrypted, just no cert check)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
 
     def _pick_asset(self, assets: list) -> str:
         """Return the browser_download_url of the most suitable asset for this OS.

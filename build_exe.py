@@ -159,6 +159,8 @@ def main():
         "--icon", "assets/icon.ico",
         "--clean",
         "--add-data", "assets/icon.ico;assets",
+        "--hidden-import", "certifi",
+        "--collect-data", "certifi",
         "main.py",
     ]
     subprocess.run(cmd, check=True)

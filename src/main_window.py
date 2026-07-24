@@ -8,8 +8,7 @@ import subprocess
 import webbrowser
 import vlc
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QFileDialog, QMessageBox, QSplitter, QDialog,
-                             QApplication)
+                             QFileDialog, QMessageBox, QSplitter, QDialog)
 from PyQt6.QtCore import Qt, QTimer, QUrl, QSize
 from PyQt6.QtGui import QIcon, QDropEvent, QDragEnterEvent
 import qtawesome as qta
@@ -135,19 +134,19 @@ class MainWindow(QMainWindow):
         # Help menu
         help_menu = self._menubar.addMenu("&Help")
 
-        self._action_check_updates = QAction("🔍  Check for Updates…", self)
+        self._action_check_updates = QAction(qta.icon('mdi6.update', color='#e8e8f0'), "Check for Updates…", self)
         self._action_check_updates.triggered.connect(self.check_for_updates_now)
         help_menu.addAction(self._action_check_updates)
 
         help_menu.addSeparator()
 
-        self._action_update_settings = QAction("⚙  Update Settings…", self)
+        self._action_update_settings = QAction(qta.icon('mdi6.cog-outline', color='#e8e8f0'), "Update Settings…", self)
         self._action_update_settings.triggered.connect(self.open_update_settings)
         help_menu.addAction(self._action_update_settings)
 
         help_menu.addSeparator()
 
-        about_action = QAction(f"ℹ  About {__app_name__}", self)
+        about_action = QAction(qta.icon('mdi6.information-outline', color='#e8e8f0'), f"About {__app_name__}", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
 
@@ -775,6 +774,16 @@ class MainWindow(QMainWindow):
                     def show_uptodate():
                         UpToDateDialog(self).exec()
                     QTimer.singleShot(0, show_uptodate)
+            except ConnectionError as exc:
+                if not silent:
+                    def show_error():
+                        QMessageBox.warning(
+                            self, "Update Check Failed",
+                            f"Could not connect to GitHub to check for updates.\n\n"
+                            f"Details: {exc}\n\n"
+                            f"Please check your internet connection and try again."
+                        )
+                    QTimer.singleShot(0, show_error)
             except Exception:
                 if not silent:
                     def show_error():
@@ -801,14 +810,13 @@ class MainWindow(QMainWindow):
             self.osd.show_message("Update settings saved")
 
     def _download_and_install_update(self, release: ReleaseInfo):
-        """Download the installer and then install it.
+        """Download the installer, then open the folder in Explorer.
 
         If the download URL isn't an .exe (e.g. portable zip or source),
         fall back to opening it in the browser instead.
         """
         url = release.download_url
         if not url.lower().endswith(".exe"):
-            # Not an installer — open in browser as before
             webbrowser.open(url)
             self.osd.show_message(
                 f"Download opened in your browser (v{release.version})"
@@ -819,40 +827,31 @@ class MainWindow(QMainWindow):
         result = dialog.exec()
 
         if result == QDialog.DialogCode.Accepted and dialog.installer_path:
-            self._perform_install(dialog.installer_path)
-        # If rejected (cancel/later), do nothing — user can check again later
+            self._show_in_explorer(dialog.installer_path)
 
-    def _perform_install(self, installer_path: str):
-        """Launch the installer silently and close the app.
-
-        The installer uses CloseApplications=yes (from installer.iss) to
-        gracefully shut down this process before replacing files, and it
-        auto-launches the new version after installation completes.
-        """
-        if not os.path.exists(installer_path):
+    def _show_in_explorer(self, path: str):
+        """Open Windows Explorer with the given file selected."""
+        if not os.path.exists(path):
             QMessageBox.critical(
                 self,
-                "Update Error",
-                "Installer file not found. Try downloading again.",
+                "File Not Found",
+                "The downloaded file could not be found. Try downloading again.",
             )
             return
 
         try:
-            # Launch silent installer — no UI, no questions
-            subprocess.Popen(
-                [installer_path, "/VERYSILENT", "/SUPPRESSMSGBOXES"],
-                close_fds=True,
-            )
+            # Opens Explorer with the file highlighted
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
         except Exception as e:
-            QMessageBox.critical(
-                self, "Update Error",
-                f"Failed to launch the installer:\n{e}",
-            )
-            return
-
-        # Brief delay to let the installer process start, then close the app.
-        # Inno Setup's CloseApplications=yes will detect and handle this process.
-        QTimer.singleShot(500, QApplication.quit)
+            # Fallback: just open the containing folder
+            try:
+                folder = os.path.dirname(path)
+                os.startfile(folder)
+            except Exception:
+                QMessageBox.warning(
+                    self, "Update",
+                    f"File saved to:\n{path}\n\nPlease run it manually to install the update.",
+                )
 
     # ── Shutdown ──────────────────────────────────────────────────────
     def closeEvent(self, event):

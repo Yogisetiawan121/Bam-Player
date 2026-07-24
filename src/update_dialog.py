@@ -4,7 +4,6 @@ Shows available release info with release notes, version diff, and a download bu
 """
 import os
 import ssl
-import tempfile
 import urllib.request
 import urllib.error
 
@@ -394,9 +393,19 @@ class UpdateDownloadDialog(QDialog):
 
     # ── Download lifecycle ───────────────────────────────────────────
 
+    @staticmethod
+    def _downloads_folder() -> str:
+        """Return the user's Downloads folder (cross-platform)."""
+        home = os.path.expanduser("~")
+        candidate = os.path.join(home, "Downloads")
+        if os.path.isdir(candidate):
+            return candidate
+        # fallback for non-English Windows or other OS
+        return home
+
     def _start_download(self):
-        """Build the temp path and kick off the background download thread."""
-        dest_dir = tempfile.gettempdir()
+        """Build dest path in Downloads and kick off the background download thread."""
+        dest_dir = self._downloads_folder()
         exe_name = f"BamPlayer-{self._release.version}-Setup.exe"
         dest_path = os.path.join(dest_dir, exe_name)
         self.installer_path = dest_path
@@ -429,7 +438,7 @@ class UpdateDownloadDialog(QDialog):
 
     @pyqtSlot(str)
     def _on_download_finished(self, path: str):
-        """Download complete — switch to install-ready UI."""
+        """Download complete — switch to show-in-Explorer UI."""
         self._download_complete = True
         self._progress_bar.setValue(100)
         self._progress_bar.setObjectName("completeBar")
@@ -439,15 +448,17 @@ class UpdateDownloadDialog(QDialog):
         self._icon_label.setPixmap(
             qta.icon("mdi6.check-circle", color="#51cf66").pixmap(28, 28)
         )
-        self._header_label.setText("Update Ready!")
+        self._header_label.setText("Download Complete!")
 
-        size_info = self._size_label.text()
-        self._size_label.setText(f"{size_info}  —  Ready to install")
+        filename = os.path.basename(path)
+        self._size_label.setText(f"Saved to Downloads  —  {filename}")
 
-        self._cancel_btn.setText("Later")
-        self._cancel_btn.setObjectName("cancelBtn")  # keep same style
+        self._cancel_btn.setText("Close")
+        self._cancel_btn.setObjectName("cancelBtn")
+        self._cancel_btn.clicked.disconnect()
+        self._cancel_btn.clicked.connect(self.reject)
 
-        self._action_btn.setText("🚀  Install Now")
+        self._action_btn.setText("📂  Show in Explorer")
         self._action_btn.setObjectName("installBtn")
         self._action_btn.style().unpolish(self._action_btn)
         self._action_btn.style().polish(self._action_btn)
